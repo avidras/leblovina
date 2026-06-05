@@ -160,6 +160,7 @@ See `specs/club-discovery.md`. Discovered via an agentic, search-led, tiered pip
 | city           | text     | |
 | website_url    | url      | may be empty until Serper resolves it (Stage 3) |
 | website_source | select   | official_list / serper / manual / none — URL provenance |
+| website_status | select   | unknown / live / dead / not_found — Stage 3 validate+resolve outcome |
 | source_url     | url      | the directory page the club came from |
 | source_club_id | text     | source's own id/code if any |
 | dedup_key      | text     | **required, unique** — `<fed>:<sourceClubId>` or `<fed>:<slug(name)>:<slug(city)>` |

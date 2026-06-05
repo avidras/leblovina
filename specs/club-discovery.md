@@ -100,12 +100,23 @@ Order of attack:
 - `none` / `login` → `needs_review`; never bypass auth or explicit anti-scraping notices.
 - Each extracted club is upserted by `dedup_key` (find-or-create, same pattern as federations).
 
-**Stage 3 — Resolve club website (Serper)** for clubs with empty `website_url`:
-- Query Serper: `"<club name>" <city> <country> volleyball`.
-- Validate the top candidate (name-token overlap; reject aggregators/social/Wikipedia/league
-  pages and the federation's own domain). Accept only above a confidence threshold.
-- Store `website_url` + `website_source = serper` + confidence note. Low confidence → leave
-  blank (do **not** invent), club still usable for manual follow-up.
+**Stage 3 — Club website enrich (validate + resolve).** A distinct enrichment that runs on the
+`clubs` table **after extraction, before Phase 3** (you can't harvest contacts without a live
+site). Triggered as an **async batch from the Clubs page** over the current filter (like
+"Process N"), so the Serper spend is gated/re-runnable. Per club, in order:
+1. **Validate** (cheap HTTP, no LLM/Serper) — if the club has a `website_url`, HTTP GET/HEAD it.
+   2xx/3xx → `website_status = live`. 404/unreachable/DNS-fail → `website_status = dead`, clear
+   the URL + `website_source = none`. (Also catches dead official-list URLs.)
+2. **Resolve** (Serper) — only for clubs with no live website (originally missing or just
+   invalidated). Query `"<club name>" <city> <country> volleyball`; validate the top candidate
+   (name-token overlap; reject aggregators/social/Wikipedia/league pages + the federation's own
+   domain) AND that it responds (HTTP). Found → `website_url` + `website_source = serper` +
+   `website_status = live`. Nothing credible → `website_status = not_found` (the club likely has
+   no website). Never invent a URL.
+
+`website_status` ∈ `unknown | live | dead | not_found` lets the UI filter and stops us
+re-resolving known-dead/not_found clubs. Validation is cheap (can run freely); resolution is
+the cost to gate.
 
 ## `clubs` collection (migration)
 
@@ -118,6 +129,7 @@ Order of attack:
 | city             | text     | |
 | website_url      | url      | may be empty until Stage 3 resolves it |
 | website_source   | select   | `official_list / serper / manual / none` (provenance of the URL) |
+| website_status   | select   | `unknown / live / dead / not_found` (Stage 3 validate+resolve outcome) |
 | source_url       | url      | the directory page this club was scraped from (provenance) |
 | source_club_id   | text     | source's own id/code if any (Italy codice, PB id, …) |
 | dedup_key        | text     | **required, unique** — see decision 4 |
