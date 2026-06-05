@@ -1,0 +1,26 @@
+# Builds the single combined image (PocketBase + SPA). Used for local full-container
+# runs and as the production compose; Coolify can deploy via the root Dockerfile directly.
+# Local dev usually runs the bare PB binary + `pnpm dev` instead (see CLAUDE.md).
+services:
+  app:
+    build:
+      context: .
+      args:
+        # Pin the PocketBase version here. Do not use :latest.
+        PB_VERSION: 0.39.1
+    image: leblovina:0.39.1
+    container_name: leblovina
+    restart: unless-stopped
+    ports:
+      - "8090:8090"   # UI at /, REST API at /api/, admin at /_/
+    volumes:
+      # Only the SQLite data is a runtime volume; migrations/hooks/SPA are baked in.
+      - pb_data:/pb/pb_data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8090/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pb_data:

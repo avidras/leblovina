@@ -1,0 +1,161 @@
+{
+  "name": "Leblovina — Scrape federations (FIVB VIS)",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "scrape-federations",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -180,
+        0
+      ],
+      "webhookId": "scrape-federations"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.fivb.org/Vis2009/XmlRequest.asmx",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "Request",
+              "value": "<Request Type=\"GetFederationList\" Fields=\"Code CountryCode Address1 Address2 Name No ConfederationCode City Category eMailAddress PhoneNo NamePresident NameGeneralSecretary NoImageLogo TeamName Website\"/>"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; leblovina-n8n)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "id": "node-http-vis",
+      "name": "FIVB VIS GetFederationList",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        40,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "xmlToJson",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "id": "node-xml",
+      "name": "Parse XML",
+      "type": "n8n-nodes-base.xml",
+      "typeVersion": 1,
+      "position": [
+        260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Federations ingest — find-or-create into PocketBase (no upsert in PB).\n// Config via n8n env vars (keep secrets out of the committed workflow):\n//   POCKETBASE_URL, POCKETBASE_ADMIN_EMAIL, POCKETBASE_ADMIN_PASSWORD\n// Input: the parsed VIS XML from the previous node ($json.Federations.Federation).\n\nconst PB_URL = ($env.POCKETBASE_URL || 'http://localhost:8090').replace(/\\/+$/, '');\nconst PB_EMAIL = $env.POCKETBASE_ADMIN_EMAIL;\nconst PB_PASSWORD = $env.POCKETBASE_ADMIN_PASSWORD;\nconst VIS_URL = 'https://www.fivb.org/Vis2009/XmlRequest.asmx';\n\nif (!PB_EMAIL || !PB_PASSWORD) {\n  throw new Error('Set POCKETBASE_ADMIN_EMAIL and POCKETBASE_ADMIN_PASSWORD as n8n env vars.');\n}\n\n// Rescrape flag (header on the webhook call). For federations the pass is identical;\n// the flag is plumbed for symmetry / future \"skip recently-scraped\" logic.\nconst headers = ($('Webhook').first().json.headers) || {};\nconst rescrape = String(headers.rescrape || headers.Rescrape || '').toLowerCase() === 'true';\n\n// Pull the parsed Federation array (XML node nests attributes under `$`).\nconst root = $input.first().json;\nlet feds = root && root.Federations && root.Federations.Federation;\nif (!feds) feds = [];\nif (!Array.isArray(feds)) feds = [feds];\n\nconst attr = (f, ...names) => {\n  const a = (f && f.$) || {};\n  for (const n of names) {\n    const v = a[n];\n    if (v != null && String(v).trim() !== '') return String(v).trim();\n  }\n  return '';\n};\nconst normUrl = (u) => {\n  u = (u || '').trim();\n  if (!u) return '';\n  return /^https?:\\/\\//i.test(u) ? u : 'https://' + u;\n};\n\n// Authenticate as PocketBase superuser.\nconst auth = await this.helpers.httpRequest({\n  method: 'POST',\n  url: PB_URL + '/api/collections/_superusers/auth-with-password',\n  body: { identity: PB_EMAIL, password: PB_PASSWORD },\n  json: true,\n});\nconst pbHeaders = { Authorization: auth.token };\n\nconst findByCode = async (code) => {\n  const res = await this.helpers.httpRequest({\n    method: 'GET',\n    url: PB_URL + '/api/collections/federations/records',\n    qs: { filter: \"(fivb_code='\" + code + \"')\", perPage: 1 },\n    headers: pbHeaders,\n    json: true,\n  });\n  return (res.items && res.items[0]) || null;\n};\n\nlet created = 0, updated = 0, failed = 0;\nconst errors = [];\nconst now = new Date().toISOString();\n\nfor (const f of feds) {\n  const code = attr(f, 'Code');\n  if (!code) continue;\n\n  const payload = {\n    fivb_code: code,\n    name: attr(f, 'Name'),\n    country: attr(f, 'TeamName'),\n    confederation: attr(f, 'ConfederationCode'),\n    website_url: normUrl(attr(f, 'WebSite', 'Website')),\n    president: attr(f, 'NamePresident'),\n    general_secretary: attr(f, 'NameGeneralSecretary'),\n    email: attr(f, 'eMailAddress', 'EmailAddress'),\n    phone: attr(f, 'PhoneNo'),\n    source_url: VIS_URL,\n    last_scraped: now,\n  };\n\n  try {\n    const existing = await findByCode(code);\n    if (existing) {\n      // Leave `status` untouched (it tracks Phase 2 club-discovery state).\n      await this.helpers.httpRequest({\n        method: 'PATCH',\n        url: PB_URL + '/api/collections/federations/records/' + existing.id,\n        headers: pbHeaders, body: payload, json: true,\n      });\n      updated++;\n    } else {\n      try {\n        await this.helpers.httpRequest({\n          method: 'POST',\n          url: PB_URL + '/api/collections/federations/records',\n          headers: pbHeaders, body: Object.assign({ status: 'new' }, payload), json: true,\n        });\n        created++;\n      } catch (e) {\n        // Benign unique-constraint race -> someone created it; update instead.\n        const again = await findByCode(code);\n        if (again) {\n          await this.helpers.httpRequest({\n            method: 'PATCH',\n            url: PB_URL + '/api/collections/federations/records/' + again.id,\n            headers: pbHeaders, body: payload, json: true,\n          });\n          updated++;\n        } else {\n          throw e;\n        }\n      }\n    }\n  } catch (e) {\n    failed++;\n    if (errors.length < 10) errors.push({ code, message: (e && e.message) || String(e) });\n  }\n}\n\nreturn [{ json: { ok: failed === 0, total: feds.length, created, updated, failed, rescrape, errors } }];\n"
+      },
+      "id": "node-code",
+      "name": "Upsert into PocketBase",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "node-respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        700,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "FIVB VIS GetFederationList",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FIVB VIS GetFederationList": {
+      "main": [
+        [
+          {
+            "node": "Parse XML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse XML": {
+      "main": [
+        [
+          {
+            "node": "Upsert into PocketBase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert into PocketBase": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateId": "leblovina-scrape-federations"
+  }
+}

@@ -1,0 +1,15 @@
+# Keep the build context lean and free of host-specific / runtime artifacts.
+.git
+node_modules
+dist
+*.log
+.DS_Store
+
+# PocketBase runtime data + the local (macOS) dev binary must never enter the image.
+pocketbase/pb_data
+pocketbase/pocketbase
+*.zip
+
+# Secrets / local env
+.env
+.env.*.local

@@ -67,28 +67,45 @@ webhooks.
 - **React + Vite + TypeScript** — the UI.
 - **shadcn/ui + Tailwind** — components.
 - **PocketBase JS SDK** (`pocketbase` npm package) — all DB access from the UI.
+- **Single container:** in production PocketBase serves the built SPA from `pb_public/`, so
+  UI + REST API + admin are all same-origin on port 8090. `src/lib/pb.ts` uses
+  `VITE_PB_URL` in dev and `window.location.origin` in prod.
 
-> **Framework decision:** written for React + shadcn/ui. If we'd rather stay in Vue, swap
-> to `shadcn-vue` (Vite + Vue + same component conventions); everything else in this file
-> still applies. Pick one and don't mix.
+> **Framework decision:** built on React + shadcn/ui (Tailwind v4 via `@tailwindcss/vite`).
+> Locked in — don't reintroduce Vue.
 
-## Repository layout (target)
+## Repository layout
+
+The frontend and PocketBase ship as **one container**: PocketBase serves the built Vite SPA
+from `pb_public/`. So the Docker build lives at the repo **root** (multi-stage: build SPA →
+bake into the PocketBase image). See `specs/frontend-container.md`.
 
 ```
+Dockerfile                # root, multi-stage: builds SPA -> PocketBase serves it (port 8090)
+docker-compose.yml        # builds the combined image; pb_data volume
+.dockerignore
+index.html                # Vite entry
+vite.config.ts            # @ alias -> /src; React + Tailwind v4 plugins
+package.json              # pnpm; "build" -> dist/ (baked into the image's pb_public)
+components.json           # shadcn config
+.env.example
 /pocketbase
-  docker-compose.yml      # PocketBase service
-  pb_migrations/          # schema as code — COMMIT THESE
-  pb_hooks/               # optional server-side JS hooks
+  pb_migrations/          # schema as code — COMMIT THESE (baked into the image)
+  pb_hooks/               # optional server-side JS hooks (baked in)
+  pb_data/                # runtime SQLite — gitignored; the only persistent volume
+  pocketbase              # local dev binary — gitignored (prod uses the binary in the image)
 /src
-  /components/ui          # shadcn components (generated)
+  /components/ui          # shadcn components (button.tsx so far)
   /lib
     pb.ts                 # PocketBase client singleton + typed collection helpers
     utils.ts              # cn() etc.
   /features
-    /federations          # Phase 1 lives here
+    /federations          # Phase 1 UI lives here
   App.tsx
-components.json           # shadcn config
-.env.example
+  main.tsx
+  index.css               # @import "tailwindcss";
+/n8n                      # version-controlled n8n workflow exports
+/specs                    # design specs (write before non-trivial work)
 ```
 
 ## Data model (PocketBase collections)
@@ -97,15 +114,26 @@ Build collections in this order — see roadmap. Define schema via **migrations*
 versioned (not just clicked into the admin UI).
 
 ### `federations` — Phase 1
-The national federations enumerated from the FIVB confederation directories. This is the
-seed inventory that later feeds club discovery.
+The national federations enumerated from the FIVB directory. This is the seed inventory that
+later feeds club discovery.
+
+**Data source:** the FIVB **VIS** XML API (`GetFederationList` on
+`https://www.fivb.org/Vis2009/XmlRequest.asmx`) returns all ~218 federations in one call —
+the directory page's "Load more" is just a client-side slice, not real pagination. n8n
+ingests this — workflow export at `n8n/scrape-federations.json`. See
+`specs/federations-ingest.md`.
 
 | field                | type     | notes                                         |
 |----------------------|----------|-----------------------------------------------|
+| fivb_code            | text     | VIS `Code` (e.g. AFG) — **stable dedup key**, unique |
 | name                 | text     | federation name                               |
-| country              | text     |                                               |
+| country              | text     | VIS `TeamName` (human, e.g. "Afghanistan")    |
 | confederation        | select   | CEV / AVC / CAVB / NORCECA / CSV — this is the region tag |
-| website_url          | url      | federation's own site                         |
+| website_url          | url      | federation's own site (normalize: prepend `https://`) |
+| president            | text     | VIS `NamePresident`                           |
+| general_secretary    | text     | VIS `NameGeneralSecretary`                    |
+| email                | text     | VIS `eMailAddress` — verbatim, may be multi-address (split in Phase 3) |
+| phone                | text     | VIS `PhoneNo`                                 |
 | club_directory_url   | url      | the page listing member clubs (input to Phase 2) |
 | extraction_method    | select   | static / js / api_endpoint / pdf / none       |
 | source_url           | url      | where we found this (provenance)              |
@@ -113,7 +141,8 @@ seed inventory that later feeds club discovery.
 | last_scraped         | date     | null until first scrape                       |
 | notes                | text     |                                               |
 
-Unique index on `country` (or `name`) to prevent duplicates across reruns.
+Unique index on `fivb_code` to prevent duplicates across reruns (it's stable even when a
+country name is normalized differently). `country` is a plain, non-unique field.
 
 ### `clubs` — Phase 2
 | name, country, region, city, website_url, source_url, federation (relation),
@@ -178,11 +207,17 @@ curl -sL -o /tmp/pb.zip https://github.com/pocketbase/pocketbase/releases/downlo
 # first run prints a link to create the superuser, or:
 ./pocketbase superuser upsert EMAIL PASS
 
-# UI
+# UI (from the repo root, in a second terminal)
+corepack enable pnpm          # one-time; pnpm version is pinned via package.json
 pnpm install
-pnpm dev
-npx shadcn@latest add button table input select badge   # as needed
+pnpm dev                      # Vite dev server (:5173), talks to PB via VITE_PB_URL
+pnpm build                    # -> dist/ (this is what gets baked into the image's pb_public)
+npx shadcn@latest add table input select badge          # as needed
 ```
+
+In dev the SPA runs on Vite's :5173 and hits PocketBase at `VITE_PB_URL`
+(`http://localhost:8090`). In prod there's no separate dev server — PocketBase serves the
+built SPA, so the UI and API are same-origin.
 
 > The local `pocketbase` binary and `pocketbase/pb_data/` are gitignored. Schema lives in
 > `pb_migrations/` (committed) and is auto-applied on `serve` — never click schema into the
@@ -190,14 +225,21 @@ npx shadcn@latest add button table input select badge   # as needed
 
 ## Deployment (production — Coolify)
 
-- Production runs PocketBase **in Docker** via `pocketbase/Dockerfile` + `docker-compose.yml`,
-  orchestrated by Coolify. The image pins the PocketBase version (never `:latest`) and builds
+Full walkthrough: `specs/coolify-deploy.md`.
+
+- Production runs the **combined image** (PocketBase + SPA) built from the **root**
+  `Dockerfile` via Coolify's **Dockerfile build pack** (base directory `/`). One service, one
+  port (8090) serving UI + API + admin. Pins the PocketBase version (never `:latest`); builds
   natively per `TARGETARCH`.
-- Coolify builds from the compose file; `pb_migrations/` is baked/mounted in and auto-applies
-  on container boot, so a deploy migrates the prod DB automatically.
-- Persist `pb_data` on a Coolify volume so the SQLite DB survives redeploys.
-- Bump the pinned version in **both** the `Dockerfile`/`compose` and the local-dev download
-  command together, so dev and prod never diverge.
+- The image **bakes in** the built SPA (`pb_public/`), `pb_migrations/`, and `pb_hooks/`.
+  Migrations auto-apply on container boot, so a deploy migrates the prod DB automatically.
+  Only `pb_data` is a runtime volume.
+- Persist `pb_data` on a Coolify volume (mount `/pb/pb_data`) so the SQLite DB survives
+  redeploys. Never delete that volume.
+- Create the superuser post-deploy via the Coolify terminal (`pocketbase superuser upsert`);
+  n8n's `POCKETBASE_ADMIN_*` must match it.
+- Bump the pinned version in the `Dockerfile`/`compose` and the local-dev download command
+  together, so dev and prod never diverge.
 
 `.env` (see `.env.example`):
 ```
@@ -230,6 +272,8 @@ Do not build ahead of the current phase. Get federations + rescrape solid first.
 
 ## Out of scope for this repo
 
-- n8n workflow definitions, Apify actor config, the email verifier integration — all live
-  in n8n.
+- Apify actor config and the email verifier integration — live in n8n.
+- n8n workflows **run** in n8n; we keep version-controlled JSON **exports** under `n8n/`
+  for reproducibility (e.g. `n8n/scrape-federations.json`). Secrets/credentials stay in n8n,
+  never in the committed export.
 - Sending email / Brevo logic (the app only flags which contacts are export-ready).
