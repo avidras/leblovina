@@ -62,7 +62,9 @@ export interface Club {
   city: string
   website_url: string
   website_source: WebsiteSource | ''
+  website_status: 'unknown' | 'live' | 'dead' | 'not_found' | ''
   source_url: string
+  detail_url: string
   source_club_id: string
   dedup_key: string
   status: ClubStatus | ''
