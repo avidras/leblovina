@@ -1,0 +1,2 @@
+# Optional server-side PocketBase JS hooks live here (e.g. main.pb.js).
+# Empty for now — kept so the bind mount target exists.

@@ -1,0 +1,13 @@
+# PocketBase runtime data — never commit (contains the live SQLite DB + secrets).
+pocketbase/pb_data/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Node / Vite (UI lands later)
+node_modules/
+dist/
+*.log
+.DS_Store
