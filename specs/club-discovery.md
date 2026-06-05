@@ -51,9 +51,14 @@ its job is to yield each club's website so Phase 3 can harvest contacts. Directo
 3. **Tooling: Firecrawl + Apify, tiered.** Firecrawl = default (JS render + LLM `/extract`);
    Apify = escalation for Cloudflare/SportsEngine anti-bot + residential proxies; Serper =
    discovery + the no-site gap-fill; plain HTTP = clean APIs; Claude = classify/extract brain.
-4. **Club identity: computed `dedup_key`** — source's own club id when present
-   (`<fed>:<sourceClubId>`), else `<fed>:<slug(name)>:<slug(city)>`. One unique index; works
-   for website-less clubs; idempotent reruns.
+4. **Club identity: computed `dedup_key`** — a **deterministic** stable id derived from the
+   per-club **detail URL/path** when present (`<fed>:<urlPath(detail)>`), else a
+   **Unicode-safe** `<fed>:<uslug(name)>:<uslug(city)>`. The id is *not* taken from the
+   volatile LLM field-mapping, and `uslug` keeps non-Latin letters so Cyrillic/Greek names
+   don't collapse. One unique index; works for website-less clubs; idempotent reruns. See
+   [`club-dedup-stability.md`](./club-dedup-stability.md) (fixes the Bulgaria collapse). NB:
+   the n8n Code-node sandbox has **no global `URL`** — URL absolutize/path helpers are pure
+   string ops, never `new URL()`.
 5. **Discovery gate — UI-controlled policy.** The gate is *not* hardcoded in the workflow; it
    reads a policy from PocketBase that the UI sets, so behaviour is changeable without editing
    n8n. Policy modes (global default, with optional per-federation override):
@@ -110,7 +115,10 @@ site). Triggered as an **async batch from the Clubs page** over the current filt
 2. **Resolve** (Serper) — only for clubs with no live website (originally missing or just
    invalidated). Query `"<club name>" <city> <country> volleyball`; validate the top candidate
    (name-token overlap; reject aggregators/social/Wikipedia/league pages + the federation's own
-   domain) AND that it responds (HTTP). Found → `website_url` + `website_source = serper` +
+   domain) AND that it responds (HTTP). **Name-token extraction must be Unicode-aware** (`\p{L}`,
+   not `[a-z]`) so non-Latin club names (Cyrillic, Greek, …) yield real tokens and match the
+   Serper result title; if a name yields no usable tokens at all, the overlap check is skipped
+   rather than rejecting every candidate. Found → `website_url` + `website_source = serper` +
    `website_status = live`. Nothing credible → `website_status = not_found` (the club likely has
    no website). Never invent a URL.
 

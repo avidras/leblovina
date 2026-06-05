@@ -164,7 +164,7 @@ See `specs/club-discovery.md`. Discovered via an agentic, search-led, tiered pip
 | source_url     | url      | the directory page the club came from |
 | detail_url     | url      | the catalog's per-club detail page (richer contact data for Phase 3), if any |
 | source_club_id | text     | source's own id/code if any |
-| dedup_key      | text     | **required, unique** — `<fed>:<sourceClubId>` or `<fed>:<slug(name)>:<slug(city)>` |
+| dedup_key      | text     | **required, unique** — deterministic stable id from the detail URL/path (`<fed>:<urlPath(detail)>`), else Unicode-safe `<fed>:<uslug(name)>:<uslug(city)>`. Not from LLM mapping; `uslug` keeps non-Latin letters (no Cyrillic collapse). See `specs/club-dedup-stability.md` |
 | status         | select   | new / contacts_found / no_contacts / error / needs_review |
 | last_scraped   | date     | |
 | notes          | text     | |
