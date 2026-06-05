@@ -1,0 +1,276 @@
+{
+  "name": "Leblovina — Extract clubs (api_endpoint)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "extract-clubs",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        0
+      ],
+      "webhookId": "extract-clubs"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p",
+              "name": "pbUrl",
+              "value": "https://leblovina.tools.biceps.digital",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -430,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -260,
+        0
+      ],
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "hzdBwrAqrPZjDmME",
+          "name": "PocketBase admin (api)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/federations/records/{{ $('Webhook').item.json.body.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('PB Auth').item.json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "getfed",
+      "name": "Get Federation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -90,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const fed = $('Get Federation').first().json;\nconst dirs = Array.isArray(fed.directory_urls) ? fed.directory_urls : [];\nconst api = dirs.find(d => d && d.extraction_method === 'api_endpoint' && /^https?:\\/\\//.test(d.url || ''));\nif (!api) return [{ json: { __skip: true, note: 'no api_endpoint directory for this federation' } }];\n\nconst res = await this.helpers.httpRequest({\n  method: 'GET', url: api.url, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; leblovina-n8n)' }, json: true,\n});\n\n// Deterministically find the largest array of plain objects anywhere in the response.\nlet best = [];\nconst walk = (o) => {\n  if (Array.isArray(o)) {\n    if (o.length > best.length && o.every(x => x && typeof x === 'object' && !Array.isArray(x))) best = o;\n    for (const x of o) walk(x);\n  } else if (o && typeof o === 'object') {\n    for (const k of Object.keys(o)) walk(o[k]);\n  }\n};\nwalk(res);\n\nconst sample = best.slice(0, 2);\nconst keys = best.length ? Object.keys(best[0]) : [];\nreturn [{ json: { sourceUrl: api.url, count: best.length, keys, sample, clubs: best } }];\n"
+      },
+      "id": "prep",
+      "name": "Fetch & prep",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        90,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-sonnet-4-6"
+        },
+        "options": {}
+      },
+      "id": "model",
+      "name": "Anthropic Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        300,
+        220
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "PsTv3b7j6pP2jeMt",
+          "name": "Anthropic (leblovina)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Sample objects from the registry:\n{{ JSON.stringify($('Fetch & prep').item.json.sample) }}\n\nAll keys: {{ JSON.stringify($('Fetch & prep').item.json.keys) }}\n\nReturn the mapping JSON.",
+        "options": {
+          "systemMessage": "You map a club-registry API's fields to our schema. Given sample objects, return ONLY a JSON object (no prose, no fences): {\"name\": <srcKey|null>, \"city\": <srcKey|null>, \"region\": <srcKey|null>, \"website\": <srcKey|null>, \"source_id\": <srcKey|null>}. Use the EXACT source field key names. name=the club's name; city=its city/town; region=state/province/regional federation; website=the club's own website URL; source_id=a stable unique id for the club. If a field is absent, use null."
+        }
+      },
+      "id": "map",
+      "name": "Map fields",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL = ($('Config').first().json.pbUrl || '').replace(/\\/+$/, '');\nconst token = $('PB Auth').first().json.token; const pbH = { Authorization: token };\nconst fed = $('Get Federation').first().json; const fedId = fed.id;\nconst prep = $('Fetch & prep').first().json;\n\nif (prep.__skip) {\n  await this.helpers.httpRequest({ method:'PATCH', url:PB_URL+'/api/collections/federations/records/'+fedId, headers:pbH, body:{ status:'needs_review', notes:prep.note }, json:true });\n  return [{ json: { ok:false, note: prep.note } }];\n}\n\nconst fivb = String(fed.fivb_code || '').toUpperCase();\nconst country = fed.country || '';\nlet raw = String($('Map fields').first().json.output || '').trim().replace(/^```(json)?/i,'').replace(/```$/,'').trim();\nlet map; try { map = JSON.parse(raw); } catch(e) { const m = raw.match(/\\{[\\s\\S]*\\}/); map = m ? JSON.parse(m[0]) : {}; }\n\nconst g = (row, field) => { const k = map[field]; if (!k) return ''; const v = row[k]; return v==null ? '' : String(v).trim(); };\nconst slug = (s) => String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40);\nconst normUrl = (u) => { u=(u||'').trim().replace(/^https?:\\/\\//i,''); if(!u) return ''; if(/[\\s,]/.test(u)||!u.includes('.')) return ''; return 'https://'+u; };\nconst now = new Date().toISOString();\nconst clubs = prep.clubs || [];\nconst findByKey = async (k) => { const r = await this.helpers.httpRequest({ method:'GET', url:PB_URL+'/api/collections/clubs/records', qs:{ filter:\"(dedup_key='\"+k+\"')\", perPage:1 }, headers:pbH, json:true }); return (r.items&&r.items[0])||null; };\n\nlet created=0, updated=0, failed=0; const errors=[];\nfor (const row of clubs) {\n  const name = g(row,'name'); if (!name) continue;\n  const sid = g(row,'source_id'), city = g(row,'city'), region = g(row,'region'), website = normUrl(g(row,'website'));\n  const dedup = sid ? (fivb+':'+sid) : (fivb+':'+slug(name)+':'+slug(city));\n  const payload = { federation:fedId, name, country, region, city, website_url:website, website_source: website?'official_list':'none', source_url:prep.sourceUrl, source_club_id:sid, dedup_key:dedup, last_scraped:now };\n  try {\n    try { await this.helpers.httpRequest({ method:'POST', url:PB_URL+'/api/collections/clubs/records', headers:pbH, body:Object.assign({status:'new'},payload), json:true }); created++; }\n    catch(e) { const ex = await findByKey(dedup); if (ex) { await this.helpers.httpRequest({ method:'PATCH', url:PB_URL+'/api/collections/clubs/records/'+ex.id, headers:pbH, body:payload, json:true }); updated++; } else throw e; }\n  } catch(e) { failed++; if (errors.length<10) errors.push({ key:dedup, message:(e&&e.message)||String(e) }); }\n}\nconst fstatus = failed===0 ? 'scraped' : 'error';\nawait this.helpers.httpRequest({ method:'PATCH', url:PB_URL+'/api/collections/federations/records/'+fedId, headers:pbH, body:{ status:fstatus, last_scraped:now }, json:true });\nreturn [{ json: { ok: failed===0, federation:fivb, mapping:map, total:clubs.length, created, updated, failed, errors } }];\n"
+      },
+      "id": "apply",
+      "name": "Apply & upsert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "resp",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        700,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "PB Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PB Auth": {
+      "main": [
+        [
+          {
+            "node": "Get Federation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Federation": {
+      "main": [
+        [
+          {
+            "node": "Fetch & prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch & prep": {
+      "main": [
+        [
+          {
+            "node": "Map fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Map fields",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map fields": {
+      "main": [
+        [
+          {
+            "node": "Apply & upsert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply & upsert": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "templateId": "leblovina-extract-clubs"
+  }
+}
