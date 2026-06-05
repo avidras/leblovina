@@ -134,8 +134,10 @@ ingests this — workflow export at `n8n/scrape-federations.json`. See
 | general_secretary    | text     | VIS `NameGeneralSecretary`                    |
 | email                | text     | VIS `eMailAddress` — verbatim, may be multi-address (split in Phase 3) |
 | phone                | text     | VIS `PhoneNo`                                 |
-| club_directory_url   | url      | the page listing member clubs (input to Phase 2) |
-| extraction_method    | select   | static / js / api_endpoint / pdf / none       |
+| club_directory_url   | url      | the primary page listing member clubs (input to Phase 2) |
+| directory_urls       | json     | discovered club-list pages: `[{ url, region, extraction_method }]` — Phase 2; **`extraction_method` is per directory entry** (federated feds have many) |
+| extraction_method    | select   | static / js / api_endpoint / pdf / none — summary/dominant value |
+| gate_override        | select   | default / always_review / always_auto — per-fed override of the UI extraction gate |
 | source_url           | url      | where we found this (provenance)              |
 | status               | select   | new / scraped / error / needs_review          |
 | last_scraped         | date     | null until first scrape                       |
@@ -145,9 +147,33 @@ Unique index on `fivb_code` to prevent duplicates across reruns (it's stable eve
 country name is normalized differently). `country` is a plain, non-unique field.
 
 ### `clubs` — Phase 2
-| name, country, region, city, website_url, source_url, federation (relation),
-  status, last_scraped |
-Unique index on a normalized `website_url`/domain.
+The bridge entity: a club + (eventually) its website, so Phase 3 can harvest contacts.
+See `specs/club-discovery.md`. Discovered via an agentic, search-led, tiered pipeline
+(Serper + Firecrawl/Apify + HTTP), Europe (CEV) first.
+
+| field          | type     | notes |
+|----------------|----------|-------|
+| federation     | relation | → `federations` |
+| name           | text     | required |
+| country        | text     | denormalized for export/filtering |
+| region         | text     | state / Land / committee / RVA / prefecture |
+| city           | text     | |
+| website_url    | url      | may be empty until Serper resolves it (Stage 3) |
+| website_source | select   | official_list / serper / manual / none — URL provenance |
+| source_url     | url      | the directory page the club came from |
+| source_club_id | text     | source's own id/code if any |
+| dedup_key      | text     | **required, unique** — `<fed>:<sourceClubId>` or `<fed>:<slug(name)>:<slug(city)>` |
+| status         | select   | new / contacts_found / no_contacts / error / needs_review |
+| last_scraped   | date     | |
+| notes          | text     | |
+
+Unique index on `dedup_key` (websites are too sparse to dedup on). Non-unique indexes on
+`website_url` and `federation`.
+
+### `settings` — config (not an entity)
+`key` (text, unique) + `value` (json). UI-controllable knobs the n8n workflow reads — notably
+`extraction_gate` (`review_all | auto_safe | auto_all`, seeded `auto_safe`). The discovery
+gate is driven from here, not hardcoded in n8n. See `specs/club-discovery.md`.
 
 ### `contacts` — Phase 3
 | club (relation), email, name, role, source_url, verification_status, verified_at,
