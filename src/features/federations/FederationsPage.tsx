@@ -202,7 +202,7 @@ function FederationRow({
               content="Search-led discovery: finds this federation's club directory, classifies it, then (if the gate allows) extracts clubs. Spends Serper/Firecrawl/LLM credits and overwrites the discovered directory URLs/method/notes."
             >
               <Button size="sm" disabled={busy} onClick={onDiscover}>
-                {busy ? 'Triggering…' : 'Discover clubs'}
+                {busy ? 'Triggering…' : 'Detect directory'}
               </Button>
             </Tooltip>
             {fed.directory_urls && fed.directory_urls.length > 0 && (
@@ -211,7 +211,7 @@ function FederationRow({
                 content="Re-extract clubs from the already-discovered directory (skips discovery, no gate). Cheap and idempotent — find-or-create by dedup_key, backfilling fields like detail_url onto existing rows."
               >
                 <Button size="sm" variant="outline" disabled={busy} onClick={onExtract}>
-                  Extract
+                  Extract clubs
                 </Button>
               </Tooltip>
             )}
