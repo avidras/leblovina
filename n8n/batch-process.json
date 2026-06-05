@@ -1,0 +1,90 @@
+{
+  "name": "Leblovina — Batch process",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "batch-process",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -300,
+        0
+      ],
+      "webhookId": "batch-process"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Fan out: one item per federation id. The downstream HTTP node processes them\n// sequentially (each process-federation call ~60s) — the webhook already responded.\nconst body = $json.body || {};\nconst ids = Array.isArray(body.ids) ? body.ids : [];\nreturn ids.filter(Boolean).map(id => ({ json: { id } }));\n"
+      },
+      "id": "split",
+      "name": "Split ids",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n-2.biceps.digital/webhook/process-federation",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $json.id }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "proc",
+      "name": "Process federation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        80,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Split ids",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split ids": {
+      "main": [
+        [
+          {
+            "node": "Process federation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "templateId": "leblovina-batch"
+  }
+}

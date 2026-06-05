@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { pb, CONFEDERATIONS, FEDERATION_STATUSES, type Federation, type GateOverride } from '@/lib/pb'
 import { useCollection } from '@/hooks/useCollection'
-import { triggerDiscoverClubs, type TriggerResult } from '@/lib/n8n'
+import { triggerDiscoverClubs, triggerBatchProcess, type TriggerResult } from '@/lib/n8n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -19,6 +19,8 @@ export function FederationsPage() {
   const [openId, setOpenId] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [result, setResult] = useState<{ id: string; r: TriggerResult } | null>(null)
+  const [batchMsg, setBatchMsg] = useState<string | null>(null)
+  const [batchBusy, setBatchBusy] = useState(false)
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -55,6 +57,23 @@ export function FederationsPage() {
     await pb.collection('federations').update(fed.id, { gate_override: value })
   }
 
+  async function batchProcess() {
+    const ids = rows.map((f) => f.id)
+    if (ids.length === 0) return
+    const ok = window.confirm(
+      `Process ${ids.length} federation(s)? Each runs discovery (+ gated extraction) — this spends ` +
+        `LLM/Firecrawl/Serper credits and runs in the background (~1/min).`,
+    )
+    if (!ok) return
+    setBatchBusy(true)
+    setBatchMsg(null)
+    const r = await triggerBatchProcess(ids)
+    setBatchBusy(false)
+    setBatchMsg(
+      r.ok ? `Queued ${ids.length} — processing in the background. Watch statuses update live.` : `Failed: ${r.error || r.status}`,
+    )
+  }
+
   if (error) return <div className="p-6 text-sm text-red-600">Failed to load federations: {error}</div>
 
   return (
@@ -74,7 +93,11 @@ export function FederationsPage() {
           ))}
         </Select>
         <span className="ml-auto text-sm text-neutral-500">{rows.length} / {items.length}{loading ? ' · loading…' : ''}</span>
+        <Button size="sm" variant="outline" disabled={batchBusy || rows.length === 0} onClick={batchProcess}>
+          {batchBusy ? 'Queuing…' : `Process ${rows.length}`}
+        </Button>
       </div>
+      {batchMsg && <div className="text-sm text-neutral-600">{batchMsg}</div>}
 
       <Table>
         <THead>
