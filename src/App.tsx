@@ -18,23 +18,40 @@ function pathToView(path: string): View {
   return (VIEWS as readonly string[]).includes(seg) ? (seg as View) : 'federations'
 }
 
-function useView(): [View, (v: View) => void] {
-  const [view, setView] = useState<View>(() => pathToView(window.location.pathname))
+// A navigation target = view + optional clubs country filter, both encoded in the
+// URL (`/clubs?country=Bulgaria`) so they survive refresh and back/forward.
+interface Loc {
+  view: View
+  country: string | null
+}
+function readLoc(): Loc {
+  return {
+    view: pathToView(window.location.pathname),
+    country: new URLSearchParams(window.location.search).get('country'),
+  }
+}
+
+function useNav(): [Loc, (view: View, country?: string | null) => void] {
+  const [loc, setLoc] = useState<Loc>(() => readLoc())
   useEffect(() => {
-    const onPop = () => setView(pathToView(window.location.pathname))
+    const onPop = () => setLoc(readLoc())
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
-  const navigate = useCallback((v: View) => {
-    if (v !== pathToView(window.location.pathname)) window.history.pushState(null, '', '/' + v)
-    setView(v)
+  const navigate = useCallback((view: View, country?: string | null) => {
+    const qs = country ? '?country=' + encodeURIComponent(country) : ''
+    const target = '/' + view + qs
+    if (target !== window.location.pathname + window.location.search) {
+      window.history.pushState(null, '', target)
+    }
+    setLoc({ view, country: country ?? null })
   }, [])
-  return [view, navigate]
+  return [loc, navigate]
 }
 
 export default function App() {
   const [authed, setAuthed] = useState(pb.authStore.isValid)
-  const [view, navigate] = useView()
+  const [{ view, country }, navigate] = useNav()
 
   useEffect(() => pb.authStore.onChange(() => setAuthed(pb.authStore.isValid)), [])
 
@@ -58,7 +75,12 @@ export default function App() {
       </header>
 
       <main className="mx-auto max-w-7xl px-6 py-6">
-        {view === 'federations' ? <FederationsPage /> : <ClubsPage />}
+        {view === 'federations' ? (
+          <FederationsPage onOpenClubs={(c) => navigate('clubs', c)} />
+        ) : (
+          // key by country so navigating to a different country re-inits the filter
+          <ClubsPage key={country ?? ''} initialCountry={country} />
+        )}
       </main>
     </div>
   )

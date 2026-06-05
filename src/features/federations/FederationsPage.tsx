@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { pb, CONFEDERATIONS, FEDERATION_STATUSES, type Federation, type GateOverride } from '@/lib/pb'
 import { useCollection } from '@/hooks/useCollection'
+import { useClubCountsByFederation } from '@/hooks/useClubCounts'
 import { triggerDiscoverClubs, triggerBatchProcess, triggerExtractFederation, type TriggerResult } from '@/lib/n8n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,14 +10,15 @@ import { Badge, statusTone } from '@/components/ui/badge'
 import { Tooltip } from '@/components/ui/tooltip'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
-type SortKey = 'fivb_code' | 'name' | 'country' | 'confederation' | 'status' | 'last_scraped'
+type SortKey = 'fivb_code' | 'name' | 'country' | 'confederation' | 'status' | 'clubs' | 'last_scraped'
 
 // Status sort order — scraped federations first, untouched (new) last.
 const STATUS_RANK: Record<string, number> = { scraped: 0, needs_review: 1, error: 2, new: 3 }
 const statusRank = (s: string) => (s in STATUS_RANK ? STATUS_RANK[s] : 99)
 
-export function FederationsPage() {
+export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string) => void }) {
   const { items, loading, error } = useCollection<Federation>('federations', 'name')
+  const clubCounts = useClubCountsByFederation()
   const [conf, setConf] = useState('')
   const [status, setStatus] = useState('')
   const [q, setQ] = useState('')
@@ -39,6 +41,8 @@ export function FederationsPage() {
       let cmp: number
       if (sort.key === 'status') {
         cmp = statusRank(a.status) - statusRank(b.status)
+      } else if (sort.key === 'clubs') {
+        cmp = (clubCounts[a.id] || 0) - (clubCounts[b.id] || 0)
       } else {
         const av = (a[sort.key] ?? '').toString().toLowerCase()
         const bv = (b[sort.key] ?? '').toString().toLowerCase()
@@ -47,7 +51,7 @@ export function FederationsPage() {
       return cmp * (sort.dir === 'asc' ? 1 : -1)
     })
     return out
-  }, [items, conf, status, q, sort])
+  }, [items, conf, status, q, sort, clubCounts])
 
   function toggleSort(key: SortKey) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }))
@@ -132,6 +136,7 @@ export function FederationsPage() {
             <TH sortable sorted={sortedOf('country')} onClick={() => toggleSort('country')}>Country</TH>
             <TH sortable sorted={sortedOf('confederation')} onClick={() => toggleSort('confederation')}>Conf.</TH>
             <TH sortable sorted={sortedOf('status')} onClick={() => toggleSort('status')}>Status</TH>
+            <TH sortable sorted={sortedOf('clubs')} onClick={() => toggleSort('clubs')} className="text-right">Clubs</TH>
             <TH>Gate</TH>
             <TH>Website</TH>
             <TH className="text-right">Actions</TH>
@@ -142,6 +147,7 @@ export function FederationsPage() {
             <FederationRow
               key={f.id}
               fed={f}
+              clubCount={clubCounts[f.id] || 0}
               open={openId === f.id}
               busy={busyId === f.id}
               result={result?.id === f.id ? result.r : null}
@@ -149,6 +155,7 @@ export function FederationsPage() {
               onDiscover={() => discover(f)}
               onExtract={() => extract(f)}
               onOverride={(v) => setOverride(f, v)}
+              onOpenClubs={() => f.country && onOpenClubs(f.country)}
             />
           ))}
         </TBody>
@@ -158,9 +165,10 @@ export function FederationsPage() {
 }
 
 function FederationRow({
-  fed, open, busy, result, onToggle, onDiscover, onExtract, onOverride,
+  fed, clubCount, open, busy, result, onToggle, onDiscover, onExtract, onOverride, onOpenClubs,
 }: {
   fed: Federation
+  clubCount: number
   open: boolean
   busy: boolean
   result: TriggerResult | null
@@ -168,6 +176,7 @@ function FederationRow({
   onDiscover: () => void
   onExtract: () => void
   onOverride: (v: GateOverride) => void
+  onOpenClubs: () => void
 }) {
   return (
     <>
@@ -177,6 +186,20 @@ function FederationRow({
         <TD>{fed.country}</TD>
         <TD><Badge tone="blue">{fed.confederation || '—'}</Badge></TD>
         <TD>{fed.status ? <Badge tone={statusTone(fed.status)}>{fed.status}</Badge> : '—'}</TD>
+        <TD className="text-right tabular-nums">
+          {clubCount > 0 ? (
+            <Tooltip side="bottom" content={`View the ${clubCount} discovered club(s) for ${fed.country}.`}>
+              <button
+                className="font-medium text-blue-600 hover:underline"
+                onClick={onOpenClubs}
+              >
+                {clubCount}
+              </button>
+            </Tooltip>
+          ) : (
+            <span className="text-neutral-400">0</span>
+          )}
+        </TD>
         <TD>
           <Select
             value={fed.gate_override || 'default'}
@@ -220,7 +243,7 @@ function FederationRow({
       </TR>
       {open && (
         <TR>
-          <TD colSpan={8} className="bg-neutral-50">
+          <TD colSpan={9} className="bg-neutral-50">
             <div className="grid grid-cols-2 gap-x-8 gap-y-1 p-2 text-sm">
               <Detail label="President" value={fed.president} />
               <Detail label="General secretary" value={fed.general_secretary} />

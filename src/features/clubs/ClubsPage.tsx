@@ -11,9 +11,10 @@ import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
 type SortKey = 'name' | 'country' | 'region' | 'city' | 'status'
 
-export function ClubsPage() {
+export function ClubsPage({ initialCountry }: { initialCountry?: string | null } = {}) {
   const { items, loading, error } = useCollection<Club>('clubs', 'name')
   const [q, setQ] = useState('')
+  const [country, setCountry] = useState(initialCountry ?? '')
   const [hasSite, setHasSite] = useState('')
   const [wsFilter, setWsFilter] = useState('')
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'name', dir: 'asc' })
@@ -23,6 +24,7 @@ export function ClubsPage() {
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
     let out = items.filter((c) => {
+      if (country && c.country !== country) return false
       if (hasSite === 'yes' && !c.website_url) return false
       if (hasSite === 'no' && c.website_url) return false
       if (wsFilter && (c.website_status || 'unknown') !== wsFilter) return false
@@ -35,7 +37,7 @@ export function ClubsPage() {
       return (av < bv ? -1 : av > bv ? 1 : 0) * (sort.dir === 'asc' ? 1 : -1)
     })
     return out
-  }, [items, q, hasSite, wsFilter, sort])
+  }, [items, q, country, hasSite, wsFilter, sort])
 
   function toggleSort(key: SortKey) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }))
@@ -59,6 +61,16 @@ export function ClubsPage() {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <Input className="max-w-xs" placeholder="Search club / city / region…" value={q} onChange={(e) => setQ(e.target.value)} />
+        {country && (
+          <button
+            className="inline-flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm text-neutral-700 hover:bg-neutral-50"
+            onClick={() => setCountry('')}
+            title="Clear country filter"
+          >
+            Country: <span className="font-medium">{country}</span>
+            <span aria-hidden className="text-neutral-400">✕</span>
+          </button>
+        )}
         <Select value={hasSite} onChange={(e) => setHasSite(e.target.value)}>
           <option value="">Any website</option>
           <option value="yes">Has website</option>
