@@ -3,6 +3,8 @@ import { pb, type Federation } from './pb'
 // UI triggers n8n workflows via webhook URLs held in env vars (never hardcoded).
 const DISCOVER_CLUBS_URL = import.meta.env.VITE_N8N_DISCOVER_CLUBS_URL as string | undefined
 const BATCH_PROCESS_URL = import.meta.env.VITE_N8N_BATCH_PROCESS_URL as string | undefined
+const EXTRACT_CLUBS_URL = import.meta.env.VITE_N8N_EXTRACT_CLUBS_URL as string | undefined
+const BATCH_ENRICH_URL = import.meta.env.VITE_N8N_BATCH_ENRICH_URL as string | undefined
 
 export interface TriggerResult {
   ok: boolean
@@ -51,4 +53,20 @@ export async function triggerBatchProcess(ids: string[]): Promise<TriggerResult>
     return { ok: false, status: 0, error: 'VITE_N8N_BATCH_PROCESS_URL is not set' }
   }
   return postWebhook(BATCH_PROCESS_URL, { ids })
+}
+
+// Re-extract a federation from its already-discovered directory (skips discovery).
+export async function triggerExtractFederation(fed: Federation): Promise<TriggerResult> {
+  if (!EXTRACT_CLUBS_URL) {
+    return { ok: false, status: 0, error: 'VITE_N8N_EXTRACT_CLUBS_URL is not set' }
+  }
+  return postWebhook(EXTRACT_CLUBS_URL, { id: fed.id })
+}
+
+// Phase 2.5: batch validate + Serper-resolve websites for clubs (async, background).
+export async function triggerBatchEnrich(ids: string[]): Promise<TriggerResult> {
+  if (!BATCH_ENRICH_URL) {
+    return { ok: false, status: 0, error: 'VITE_N8N_BATCH_ENRICH_URL is not set' }
+  }
+  return postWebhook(BATCH_ENRICH_URL, { ids })
 }

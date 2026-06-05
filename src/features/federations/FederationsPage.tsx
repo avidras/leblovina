@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { pb, CONFEDERATIONS, FEDERATION_STATUSES, type Federation, type GateOverride } from '@/lib/pb'
 import { useCollection } from '@/hooks/useCollection'
-import { triggerDiscoverClubs, triggerBatchProcess, type TriggerResult } from '@/lib/n8n'
+import { triggerDiscoverClubs, triggerBatchProcess, triggerExtractFederation, type TriggerResult } from '@/lib/n8n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -49,6 +49,15 @@ export function FederationsPage() {
     setBusyId(fed.id)
     setResult(null)
     const r = await triggerDiscoverClubs(fed)
+    setResult({ id: fed.id, r })
+    setBusyId(null)
+  }
+
+  // Re-extract from the already-discovered directory (skips discovery) — for needs_review/re-runs.
+  async function extract(fed: Federation) {
+    setBusyId(fed.id)
+    setResult(null)
+    const r = await triggerExtractFederation(fed)
     setResult({ id: fed.id, r })
     setBusyId(null)
   }
@@ -122,6 +131,7 @@ export function FederationsPage() {
               result={result?.id === f.id ? result.r : null}
               onToggle={() => setOpenId((id) => (id === f.id ? null : f.id))}
               onDiscover={() => discover(f)}
+              onExtract={() => extract(f)}
               onOverride={(v) => setOverride(f, v)}
             />
           ))}
@@ -132,7 +142,7 @@ export function FederationsPage() {
 }
 
 function FederationRow({
-  fed, open, busy, result, onToggle, onDiscover, onOverride,
+  fed, open, busy, result, onToggle, onDiscover, onExtract, onOverride,
 }: {
   fed: Federation
   open: boolean
@@ -140,6 +150,7 @@ function FederationRow({
   result: TriggerResult | null
   onToggle: () => void
   onDiscover: () => void
+  onExtract: () => void
   onOverride: (v: GateOverride) => void
 }) {
   return (
@@ -168,10 +179,15 @@ function FederationRow({
             </a>
           ) : <span className="text-neutral-400">none</span>}
         </TD>
-        <TD className="text-right">
+        <TD className="text-right whitespace-nowrap">
           <Button size="sm" disabled={busy} onClick={onDiscover}>
             {busy ? 'Triggering…' : 'Discover clubs'}
           </Button>
+          {fed.directory_urls && fed.directory_urls.length > 0 && (
+            <Button size="sm" variant="outline" className="ml-1" disabled={busy} onClick={onExtract} title="Re-extract from the discovered directory (skips discovery)">
+              Extract
+            </Button>
+          )}
         </TD>
       </TR>
       {open && (

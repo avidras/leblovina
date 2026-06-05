@@ -33,11 +33,14 @@ export function statusTone(status: string): Tone {
   switch (status) {
     case 'scraped':
     case 'contacts_found':
+    case 'live':
       return 'green'
     case 'needs_review':
+    case 'not_found':
       return 'amber'
     case 'error':
     case 'no_contacts':
+    case 'dead':
       return 'red'
     case 'new':
       return 'blue'

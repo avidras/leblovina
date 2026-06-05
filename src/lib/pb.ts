@@ -51,6 +51,8 @@ export interface Federation {
 
 export type ClubStatus = 'new' | 'contacts_found' | 'no_contacts' | 'error' | 'needs_review'
 export type WebsiteSource = 'official_list' | 'serper' | 'manual' | 'none'
+export type WebsiteStatus = 'unknown' | 'live' | 'dead' | 'not_found'
+export const WEBSITE_STATUSES: WebsiteStatus[] = ['unknown', 'live', 'dead', 'not_found']
 
 // Mirrors the `clubs` collection schema.
 export interface Club {
