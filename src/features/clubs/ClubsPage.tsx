@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Badge, statusTone } from '@/components/ui/badge'
+import { Tooltip } from '@/components/ui/tooltip'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
 type SortKey = 'name' | 'country' | 'region' | 'city' | 'status'
@@ -70,9 +71,14 @@ export function ClubsPage() {
           ))}
         </Select>
         <span className="ml-auto text-sm text-neutral-500">{rows.length} / {items.length}{loading ? ' · loading…' : ''}</span>
-        <Button size="sm" variant="outline" disabled={enrichBusy || rows.length === 0} onClick={resolveWebsites}>
-          {enrichBusy ? 'Queuing…' : `Resolve ${rows.length}`}
-        </Button>
+        <Tooltip
+          side="bottom"
+          content="For every club in the current filter: validate its website (cheap HTTP), then Serper-resolve a site for clubs without a live one. Runs in the background; web status updates live."
+        >
+          <Button size="sm" variant="outline" disabled={enrichBusy || rows.length === 0} onClick={resolveWebsites}>
+            {enrichBusy ? 'Queuing…' : `Resolve ${rows.length}`}
+          </Button>
+        </Tooltip>
       </div>
       {enrichMsg && <div className="text-sm text-neutral-600">{enrichMsg}</div>}
 

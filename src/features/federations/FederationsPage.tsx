@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Badge, statusTone } from '@/components/ui/badge'
+import { Tooltip } from '@/components/ui/tooltip'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
 type SortKey = 'fivb_code' | 'name' | 'country' | 'confederation' | 'status' | 'last_scraped'
@@ -102,9 +103,14 @@ export function FederationsPage() {
           ))}
         </Select>
         <span className="ml-auto text-sm text-neutral-500">{rows.length} / {items.length}{loading ? ' · loading…' : ''}</span>
-        <Button size="sm" variant="outline" disabled={batchBusy || rows.length === 0} onClick={batchProcess}>
-          {batchBusy ? 'Queuing…' : `Process ${rows.length}`}
-        </Button>
+        <Tooltip
+          side="bottom"
+          content="Batch-process every federation in the current filter through discover → gate → extract, in the background (~1/min). Spends LLM/Firecrawl/Serper credits."
+        >
+          <Button size="sm" variant="outline" disabled={batchBusy || rows.length === 0} onClick={batchProcess}>
+            {batchBusy ? 'Queuing…' : `Process ${rows.length}`}
+          </Button>
+        </Tooltip>
       </div>
       {batchMsg && <div className="text-sm text-neutral-600">{batchMsg}</div>}
 
@@ -180,14 +186,26 @@ function FederationRow({
           ) : <span className="text-neutral-400">none</span>}
         </TD>
         <TD className="text-right whitespace-nowrap">
-          <Button size="sm" disabled={busy} onClick={onDiscover}>
-            {busy ? 'Triggering…' : 'Discover clubs'}
-          </Button>
-          {fed.directory_urls && fed.directory_urls.length > 0 && (
-            <Button size="sm" variant="outline" className="ml-1" disabled={busy} onClick={onExtract} title="Re-extract from the discovered directory (skips discovery)">
-              Extract
-            </Button>
-          )}
+          <span className="inline-flex items-center justify-end gap-1">
+            <Tooltip
+              side="bottom"
+              content="Search-led discovery: finds this federation's club directory, classifies it, then (if the gate allows) extracts clubs. Spends Serper/Firecrawl/LLM credits and overwrites the discovered directory URLs/method/notes."
+            >
+              <Button size="sm" disabled={busy} onClick={onDiscover}>
+                {busy ? 'Triggering…' : 'Discover clubs'}
+              </Button>
+            </Tooltip>
+            {fed.directory_urls && fed.directory_urls.length > 0 && (
+              <Tooltip
+                side="bottom"
+                content="Re-extract clubs from the already-discovered directory (skips discovery, no gate). Cheap and idempotent — find-or-create by dedup_key, backfilling fields like detail_url onto existing rows."
+              >
+                <Button size="sm" variant="outline" disabled={busy} onClick={onExtract}>
+                  Extract
+                </Button>
+              </Tooltip>
+            )}
+          </span>
         </TD>
       </TR>
       {open && (
