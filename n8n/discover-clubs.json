@@ -1,0 +1,152 @@
+{
+  "name": "Leblovina — Discover clubs",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "discover-clubs",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "n-webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -300,
+        0
+      ],
+      "webhookId": "discover-clubs"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c-pburl",
+              "name": "pbUrl",
+              "value": "https://leblovina.tools.biceps.digital",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n-config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "n-auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        100,
+        0
+      ],
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "hzdBwrAqrPZjDmME",
+          "name": "PocketBase admin (api)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Phase 2 — Discover clubs for one federation (proof: Poland deterministic extractor).\n// Auth via the upstream \"PB Auth\" node (Custom Auth credential); token reused here.\n// Find-or-create clubs by dedup_key, then update the federation. See specs/club-discovery.md.\n\nconst PB_URL = ($('Config').first().json.pbUrl || '').replace(/\\/+$/, '');\nconst token = $('PB Auth').first().json.token;\nif (!token) throw new Error('No PocketBase token — check the \"PocketBase admin\" credential on PB Auth.');\nconst pbH = { Authorization: token };\n\nconst body = ($('Webhook').first().json.body) || {};\nconst fedId = body.id;\nif (!fedId) throw new Error('Webhook body must include the federation record id.');\n\nconst fed = await this.helpers.httpRequest({\n  method: 'GET', url: PB_URL + '/api/collections/federations/records/' + fedId, headers: pbH, json: true,\n});\nconst code = String(fed.fivb_code || body.fivb_code || '').toUpperCase();\nconst country = fed.country || '';\nconst now = new Date().toISOString();\nconst normUrl = (u) => { u = (u || '').trim().replace(/^https?:\\/\\//i, ''); if (!u) return ''; if (/[\\s,]/.test(u) || !u.includes('.')) return ''; return 'https://' + u; };\n\n// --- extractor registry (proof covers Poland; others -> needs_review) ---\nif (code !== 'POL') {\n  await this.helpers.httpRequest({\n    method: 'PATCH', url: PB_URL + '/api/collections/federations/records/' + fedId, headers: pbH,\n    body: { status: 'needs_review', notes: 'no club extractor implemented yet (proof = Poland only)' }, json: true,\n  });\n  return [{ json: { ok: false, federation: code, note: 'no extractor for ' + code + ' yet' } }];\n}\n\n// Poland: open JSON API, all clubs in one GET.\nconst SOURCE = 'https://pzps-rejestracja.pl/klub/getList';\nconst res = await this.helpers.httpRequest({\n  method: 'GET', url: SOURCE, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; leblovina-n8n)' }, json: true,\n});\nconst all = (res && res.data) ? res.data : (Array.isArray(res) ? res : []);\nconst rows = all.filter((r) =>\n  String(r.aktywny) === '1' && !r.deleted_at && r.nazwa && !/^[-\\s]*$/.test(String(r.nazwa)));\n\nconst findByKey = async (key) => {\n  const r = await this.helpers.httpRequest({\n    method: 'GET', url: PB_URL + '/api/collections/clubs/records',\n    qs: { filter: \"(dedup_key='\" + key + \"')\", perPage: 1 }, headers: pbH, json: true,\n  });\n  return (r.items && r.items[0]) || null;\n};\n\nlet created = 0, updated = 0, failed = 0;\nconst errors = [];\nfor (const r of rows) {\n  const dedup = 'POL:' + r.id;\n  const website = normUrl(r.www);\n  const payload = {\n    federation: fedId, name: String(r.nazwa).trim(), country,\n    region: (r.wzps_nazwa || '').trim(), city: (r.miasto || '').trim(),\n    website_url: website, website_source: website ? 'official_list' : 'none',\n    source_url: SOURCE, source_club_id: String(r.id), dedup_key: dedup, last_scraped: now,\n  };\n  try {\n    try {\n      await this.helpers.httpRequest({\n        method: 'POST', url: PB_URL + '/api/collections/clubs/records', headers: pbH,\n        body: Object.assign({ status: 'new' }, payload), json: true,\n      });\n      created++;\n    } catch (e) {\n      const ex = await findByKey(dedup);\n      if (ex) {\n        await this.helpers.httpRequest({\n          method: 'PATCH', url: PB_URL + '/api/collections/clubs/records/' + ex.id, headers: pbH, body: payload, json: true,\n        });\n        updated++;\n      } else { throw e; }\n    }\n  } catch (e) {\n    failed++;\n    if (errors.length < 10) errors.push({ key: dedup, message: (e && e.message) || String(e) });\n  }\n}\n\nconst fedStatus = failed === 0 ? 'scraped' : 'error';\nawait this.helpers.httpRequest({\n  method: 'PATCH', url: PB_URL + '/api/collections/federations/records/' + fedId, headers: pbH,\n  body: {\n    club_directory_url: SOURCE,\n    directory_urls: [{ url: SOURCE, region: 'national', extraction_method: 'api_endpoint' }],\n    extraction_method: 'api_endpoint', status: fedStatus, last_scraped: now,\n  }, json: true,\n});\n\nreturn [{ json: { ok: failed === 0, federation: 'POL', total: rows.length, created, updated, failed, errors } }];\n"
+      },
+      "id": "n-code",
+      "name": "Discover & extract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "n-respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        540,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "PB Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PB Auth": {
+      "main": [
+        [
+          {
+            "node": "Discover & extract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discover & extract": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateId": "leblovina-discover-clubs"
+  }
+}
