@@ -1,6 +1,10 @@
 # PocketBase runtime data — never commit (contains the live SQLite DB + secrets).
 pocketbase/pb_data/
 
+# Local PocketBase binary for dev — platform-specific download, not committed.
+# (Production runs the pinned binary inside the Docker image instead.)
+pocketbase/pocketbase
+
 # Env
 .env
 .env.local

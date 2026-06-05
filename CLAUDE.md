@@ -2,6 +2,36 @@
 
 Project context and conventions for Claude Code. Read this fully before making changes.
 
+## Always-on rules
+
+- **Never commit or push** unless the user explicitly asks you to. Do not create commits,
+  amend commits, or push to any remote without direct instruction.
+- **Write a spec before implementing any non-trivial feature or refactor.** For anything
+  beyond a small isolated edit, write a spec file in `specs/<short-kebab-name>.md` (or a
+  subdirectory under `specs/` for grouped specs) and save it to the repo before writing any
+  code. The spec captures the agreed plan after the interactive questionnaire concludes —
+  goals, scope, decisions taken with rationale, schema/data migrations, file-level changes
+  grouped by step, and out-of-scope items. Reuse the structure of existing files in
+  `specs/` as the format reference (this repo is new — once the first spec lands, match its
+  shape). Only after the spec is saved do you start implementing.
+- **When designing a new feature, drive open questions as an interactive questionnaire.**
+  Whenever a non-trivial new function, feature, or refactor is being planned and there are
+  open design decisions, do not list them in prose for the user to answer in one shot —
+  drive them as an interactive Q&A using `AskUserQuestion`, **one question at a time**
+  unless the questions are genuinely independent. After each answer, fold the decision into
+  the plan and ask the next question. This applies to anything where you'd otherwise write
+  "do you want X or Y?" in a plan.
+- **Keep feature specs in sync with code.** When modifying a feature that has an existing
+  spec in `specs/`, update the spec to reflect the change — new collections/fields, schema
+  changes, altered behaviour, new n8n webhooks, etc. The spec is the canonical design
+  document; if it drifts from the code, future work will be based on wrong assumptions.
+  This applies only to features that already have a spec file; you do not need to create
+  specs for features that don't have one.
+- **Keep these docs in sync.** When you change behaviour covered by this file or by a doc
+  under `.claude/docs/`, update that doc in the same change. If you add a new cross-cutting
+  rule or topic area, add it to the relevant doc (or create one under `.claude/docs/`) and
+  link it from this file.
+
 ## Project: Volleyball club lead-gen — app & database
 
 This repo is **the data layer + the team-facing UI** for a volleyball-club lead-generation
@@ -133,16 +163,41 @@ Enums:
 
 ## Dev setup
 
+**Local dev runs PocketBase as a bare binary — no Docker.** PocketBase is a single binary;
+running it directly is faster to iterate on and needs nothing installed. Docker is reserved
+for **production deploys on Coolify** (see Deployment). Both run the *same* pinned version
+and the *same* `pb_migrations/`, so dev and prod schemas stay identical.
+
 ```bash
-# PocketBase
-cd pocketbase && docker compose up -d        # admin UI at :8090/_/
-# pin a specific PocketBase version in the image — do not use :latest
+# PocketBase (local dev — bare binary, version pinned to match the Docker image)
+cd pocketbase
+# one-time: download the pinned binary for your platform (gitignored, not committed)
+curl -sL -o /tmp/pb.zip https://github.com/pocketbase/pocketbase/releases/download/v0.39.1/pocketbase_0.39.1_darwin_arm64.zip \
+  && unzip -o /tmp/pb.zip pocketbase && rm /tmp/pb.zip
+./pocketbase serve                            # admin UI at :8090/_/; migrations auto-apply
+# first run prints a link to create the superuser, or:
+./pocketbase superuser upsert EMAIL PASS
 
 # UI
 pnpm install
 pnpm dev
 npx shadcn@latest add button table input select badge   # as needed
 ```
+
+> The local `pocketbase` binary and `pocketbase/pb_data/` are gitignored. Schema lives in
+> `pb_migrations/` (committed) and is auto-applied on `serve` — never click schema into the
+> admin UI as the source of truth.
+
+## Deployment (production — Coolify)
+
+- Production runs PocketBase **in Docker** via `pocketbase/Dockerfile` + `docker-compose.yml`,
+  orchestrated by Coolify. The image pins the PocketBase version (never `:latest`) and builds
+  natively per `TARGETARCH`.
+- Coolify builds from the compose file; `pb_migrations/` is baked/mounted in and auto-applies
+  on container boot, so a deploy migrates the prod DB automatically.
+- Persist `pb_data` on a Coolify volume so the SQLite DB survives redeploys.
+- Bump the pinned version in **both** the `Dockerfile`/`compose` and the local-dev download
+  command together, so dev and prod never diverge.
 
 `.env` (see `.env.example`):
 ```
