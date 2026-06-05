@@ -1,0 +1,201 @@
+{
+  "name": "Leblovina — Process federation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "process-federation",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -500,
+        0
+      ],
+      "webhookId": "process-federation"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a",
+              "name": "pbUrl",
+              "value": "https://leblovina.tools.biceps.digital",
+              "type": "string"
+            },
+            {
+              "id": "b",
+              "name": "discoverUrl",
+              "value": "https://n8n-2.biceps.digital/webhook/discover-agent",
+              "type": "string"
+            },
+            {
+              "id": "c",
+              "name": "extractApiUrl",
+              "value": "https://n8n-2.biceps.digital/webhook/extract-clubs",
+              "type": "string"
+            },
+            {
+              "id": "d",
+              "name": "extractHtmlUrl",
+              "value": "https://n8n-2.biceps.digital/webhook/extract-clubs-html",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -340,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -180,
+        0
+      ],
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "hzdBwrAqrPZjDmME",
+          "name": "PocketBase admin (api)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.discoverUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $('Webhook').item.json.body.id }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "disc",
+      "name": "Discover",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -20,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const cfg = $('Config').first().json;\nconst PB_URL = (cfg.pbUrl || '').replace(/\\/+$/, '');\nconst token = $('PB Auth').first().json.token; const pbH = { Authorization: token };\nconst id = (($('Webhook').first().json.body) || {}).id;\nconst discover = $('Discover').first().json;        // slow call already done by the HTTP node\nconst method = discover.extraction_method || '';\n\nlet gate = 'auto_safe';\ntry { const s = await this.helpers.httpRequest({ method:'GET', url: PB_URL+'/api/collections/settings/records', qs:{ filter:\"(key='extraction_gate')\", perPage:1 }, headers:pbH, json:true }); if (s.items && s.items[0]) gate = s.items[0].value || 'auto_safe'; } catch(e) {}\nconst fed = await this.helpers.httpRequest({ method:'GET', url: PB_URL+'/api/collections/federations/records/'+id, headers:pbH, json:true });\nconst override = fed.gate_override || 'default';\nlet eff = gate;\nif (override === 'always_review') eff = 'review_all';\nelse if (override === 'always_auto') eff = 'auto_all';\n\nlet route = 'review';\nif (discover.ok) {\n  if (eff === 'review_all') route = 'review';\n  else if (method === 'api_endpoint') route = 'extract_api';\n  else if (method === 'static') route = (eff === 'auto_all' || eff === 'auto_safe') ? 'extract_html' : 'review';\n  else if (method === 'js') route = (eff === 'auto_all') ? 'extract_html' : 'review';\n  else route = 'review';\n}\n\nlet extract = null;\nif (route === 'extract_api') extract = await this.helpers.httpRequest({ method:'POST', url: cfg.extractApiUrl, body:{ id }, json:true });\nelse if (route === 'extract_html') extract = await this.helpers.httpRequest({ method:'POST', url: cfg.extractHtmlUrl, body:{ id }, json:true });\n\nreturn [{ json: { id, federation: discover.federation, gate: eff, method, route,\n  discover: { ok: discover.ok, primary: discover.primary_directory_url, confidence: discover.confidence },\n  extract } }];\n"
+      },
+      "id": "proc",
+      "name": "Decide & Extract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "resp",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        340,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "PB Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PB Auth": {
+      "main": [
+        [
+          {
+            "node": "Discover",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discover": {
+      "main": [
+        [
+          {
+            "node": "Decide & Extract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide & Extract": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "templateId": "leblovina-process-fed"
+  }
+}
