@@ -1,0 +1,340 @@
+{
+  "name": "Leblovina — Extract clubs (pdf)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "extract-clubs-pdf",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        0
+      ],
+      "webhookId": "extract-clubs-pdf"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p",
+              "name": "pbUrl",
+              "value": "https://leblovina.tools.biceps.digital",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -280,
+        0
+      ],
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "hzdBwrAqrPZjDmME",
+          "name": "PocketBase admin (api)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/federations/records/{{ $('Webhook').item.json.body.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('PB Auth').item.json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "getfed",
+      "name": "Get Federation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const fed = $('Get Federation').first().json;\nconst body = ($('Webhook').first().json.body) || {};\nlet items = [];\nif (body.url) {\n  items = [{ url: String(body.url), region: '' }];\n} else {\n  const dirs = Array.isArray(fed.directory_urls) ? fed.directory_urls : [];\n  items = dirs\n    .filter(d => d && d.extraction_method === 'pdf' && /^https?:\\/\\//.test(d.url || ''))\n    .map(d => ({ url: d.url, region: d.region || '' }));\n}\nif (!items.length) return [{ json: { __skip: true, note: 'no pdf directory' } }];\nreturn items.map(it => ({ json: it }));\n"
+      },
+      "id": "pick",
+      "name": "pick pdfs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('pick pdfs').item.json.url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "fetch",
+      "name": "Fetch PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        210,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "data",
+        "options": {}
+      },
+      "id": "xpdf",
+      "name": "Extract PDF text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        380,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL = ($('Config').first().json.pbUrl || '').replace(/\\/+$/, '');\nconst token = $('PB Auth').first().json.token; const pbH = { Authorization: token };\nconst fed = $('Get Federation').first().json; const fedId = fed.id;\nconst setFed = (body) => this.helpers.httpRequest({ method:'PATCH', url:PB_URL+'/api/collections/federations/records/'+fedId, headers:pbH, body, json:true });\n\nconst picks = $('pick pdfs').all().map(i => i.json);\nif (picks.length === 1 && picks[0].__skip) {\n  await setFed({ status:'needs_review', notes:picks[0].note });\n  return [{ json: { ok:false, note: picks[0].note } }];\n}\nconst texts  = $('Extract PDF text').all().map(i => i.json);\nconst agents = $('Extract clubs').all().map(i => i.json);\n\nconst fivb = String(fed.fivb_code||'').toUpperCase(); const country = fed.country||'';\nconst dirs = Array.isArray(fed.directory_urls) ? fed.directory_urls : [];\nconst uslug = (s) => String(s||'').toLowerCase().normalize('NFKC').replace(/[^\\p{L}\\p{N}]+/gu,'-').replace(/^-+|-+$/g,'').slice(0,60);\nconst normUrl = (u) => { u=(u||'').trim().replace(/^https?:\\/\\//i,''); if(!u) return ''; if(/[\\s,]/.test(u)||!u.includes('.')) return ''; return 'https://'+u; };\nconst hostOf = (u) => String(u||'').replace(/^https?:\\/\\//i,'').replace(/^www\\./i,'').split('/')[0].toLowerCase();\nconst now = new Date().toISOString();\nconst findByKey = async (k) => { const r = await this.helpers.httpRequest({ method:'GET', url:PB_URL+'/api/collections/clubs/records', qs:{ filter:\"(dedup_key='\"+k+\"')\", perPage:1 }, headers:pbH, json:true }); return (r.items&&r.items[0])||null; };\n\nlet created=0, updated=0, failed=0, totalClubs=0, scrapeFails=0; const errors=[]; const perDir=[];\nfor (let i=0;i<picks.length;i++){\n  const pick = picks[i]||{}; const tx = texts[i]||{}; const ag = agents[i]||{};\n  const srcUrl = pick.url || '';\n  const text = (tx && (typeof tx.text==='string' ? tx.text : '')) || '';\n  if (!text){ scrapeFails++; errors.push({ url:srcUrl, message:'pdf parse failed: no text' }); continue; }\n  const dirHost = hostOf(srcUrl);\n  const entry = dirs.find(d => d && d.url === srcUrl) || {};\n  const dirRegion = entry.region || pick.region || '';\n\n  let raw=String(ag.output||'').trim().replace(/^```(json)?/i,'').replace(/```$/,'').trim();\n  let parsed; try{ parsed=JSON.parse(raw); }catch(e){ const x=raw.match(/\\{[\\s\\S]*\\}/); parsed=x?JSON.parse(x[0]):{}; }\n  const clubs = Array.isArray(parsed.clubs)?parsed.clubs:[];\n  totalClubs += clubs.length; let dc=0, du=0;\n  for (const c of clubs){\n    const name = String(c.name||'').replace(/\\*+/g,'').trim(); if(!name) continue;\n    const city = String(c.city||'').trim(); const region = String(c.region||'').trim() || dirRegion;\n    let website = normUrl(c.website);\n    if (website && dirHost && hostOf(website)===dirHost) website='';\n    const dedup = fivb+':'+uslug(name)+':'+uslug(city);\n    const base = { federation:fedId, name, country, region, city, dedup_key:dedup, last_scraped:now };\n    const full = Object.assign({}, base, { website_url:website, website_source: website?'official_list':'none', source_url:srcUrl, status:'new' });\n    try {\n      try { await this.helpers.httpRequest({ method:'POST', url:PB_URL+'/api/collections/clubs/records', headers:pbH, body:full, json:true }); created++; dc++; }\n      catch(e){\n        const ex = await findByKey(dedup);\n        if (ex){\n          const patch = Object.assign({}, base);\n          if (website){ patch.website_url=website; patch.website_source='official_list'; }\n          if (!ex.source_url) patch.source_url=srcUrl;\n          await this.helpers.httpRequest({ method:'PATCH', url:PB_URL+'/api/collections/clubs/records/'+ex.id, headers:pbH, body:patch, json:true }); updated++; du++;\n        } else throw e;\n      }\n    } catch(e){ failed++; if(errors.length<10) errors.push({ key:dedup, message:(e&&e.message)||String(e) }); }\n  }\n  perDir.push({ url:srcUrl, clubs:clubs.length, created:dc, updated:du });\n}\n\nlet status;\nif (created+updated>0 && failed===0) status='scraped';\nelse if (failed>0) status='error';\nelse if (scrapeFails>0 && created+updated===0) status='error';\nelse status='needs_review';\nawait setFed({ status, last_scraped:now });\nreturn [{ json: { ok: failed===0 && status==='scraped', federation:fivb, directories:perDir, total:totalClubs, created, updated, failed, scrapeFails, errors } }];\n"
+      },
+      "id": "apply",
+      "name": "Apply & upsert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "resp",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-sonnet-4-6"
+        },
+        "options": {
+          "maxTokensToSample": 16000
+        }
+      },
+      "id": "model",
+      "name": "Anthropic Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        560,
+        300
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "PsTv3b7j6pP2jeMt",
+          "name": "Anthropic (leblovina)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Extract PDF text').item.json.text ? $('Extract PDF text').item.json.text : 'No content.' }}",
+        "options": {
+          "systemMessage": "You extract volleyball clubs from a national federation's member-club list, given as plain text extracted from a PDF (usually a numbered table with columns such as name, registry number, address, contact person, phone, e-mail, website). Return ONLY a JSON object - no prose, no code fences - of shape {\"clubs\":[{\"name\":string,\"city\":string,\"region\":string,\"website\":string,\"detail_url\":string}]}. Include EVERY real club/society; ignore the header row, column titles, totals and page footers. For each club: name = the club's name (required; skip nameless rows). city = its town from the address if present (strip postal codes, street, registry numbers). region = county/region if shown, else \"\". website = the club's OWN website if a WWW/URL column is present (e.g. www.club.ee), else \"\". detail_url = \"\" (PDF lists have no per-club links). Use \"\" for any missing field, never null. If there are no clubs, return {\"clubs\":[]}."
+        }
+      },
+      "id": "extract",
+      "name": "Extract clubs",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        560,
+        120
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "PB Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PB Auth": {
+      "main": [
+        [
+          {
+            "node": "Get Federation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Federation": {
+      "main": [
+        [
+          {
+            "node": "pick pdfs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "pick pdfs": {
+      "main": [
+        [
+          {
+            "node": "Fetch PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch PDF": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF text": {
+      "main": [
+        [
+          {
+            "node": "Extract clubs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract clubs": {
+      "main": [
+        [
+          {
+            "node": "Apply & upsert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply & upsert": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extract clubs",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "templateId": "leblovina-extract-pdf"
+  }
+}

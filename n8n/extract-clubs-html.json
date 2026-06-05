@@ -92,7 +92,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const fed = $('Get Federation').first().json;\nconst body = ($('Webhook').first().json.body) || {};\nlet items = [];\nif (body.url) {\n  items = [{ url: String(body.url), region: '' }];\n} else {\n  const dirs = Array.isArray(fed.directory_urls) ? fed.directory_urls : [];\n  items = dirs\n    .filter(d => d && ['static','js','pdf'].includes(d.extraction_method) && /^https?:\\/\\//.test(d.url || ''))\n    .map(d => ({ url: d.url, region: d.region || '' }));\n}\nif (!items.length) return [{ json: { __skip: true, note: 'no static/js/pdf directory page' } }];\nreturn items.map(it => ({ json: it }));\n"
+        "jsCode": "const fed = $('Get Federation').first().json;\nconst body = ($('Webhook').first().json.body) || {};\nlet items = [];\nif (body.url) {\n  items = [{ url: String(body.url), region: '' }];\n} else {\n  const dirs = Array.isArray(fed.directory_urls) ? fed.directory_urls : [];\n  items = dirs\n    .filter(d => d && ['static','js'].includes(d.extraction_method) && /^https?:\\/\\//.test(d.url || ''))\n    .map(d => ({ url: d.url, region: d.region || '' }));\n}\nif (!items.length) return [{ json: { __skip: true, note: 'no static/js directory page' } }];\nreturn items.map(it => ({ json: it }));\n"
       },
       "id": "pick",
       "name": "pick url",
