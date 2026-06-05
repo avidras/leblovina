@@ -6,6 +6,16 @@
 FROM node:22-alpine AS web
 RUN corepack enable
 WORKDIR /app
+# Vite inlines VITE_* into the bundle at BUILD time. Coolify must pass these as build args
+# (mark each env var "Available at Buildtime"); we promote them to ENV so `pnpm build` sees
+# them. Changing any of these requires a redeploy (rebuild). VITE_PB_URL is optional in prod
+# (the app falls back to same-origin, since PocketBase serves this SPA).
+ARG VITE_PB_URL
+ARG VITE_N8N_DISCOVER_CLUBS_URL
+ARG VITE_N8N_BATCH_PROCESS_URL
+ENV VITE_PB_URL=$VITE_PB_URL \
+    VITE_N8N_DISCOVER_CLUBS_URL=$VITE_N8N_DISCOVER_CLUBS_URL \
+    VITE_N8N_BATCH_PROCESS_URL=$VITE_N8N_BATCH_PROCESS_URL
 # Install deps first for layer caching (packageManager pin drives the pnpm version).
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
