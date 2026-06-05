@@ -68,6 +68,46 @@ dedup_key  = stableId ? `${FIVB}:${stableId}`
 No schema changes — `clubs` already has `detail_url (url)`, `source_club_id (text)`,
 `dedup_key (text, unique)`.
 
+## Amendment — html directories use a name-based key (merge across lists)
+
+The detail-path key above is right for **catalog/API sources** (one authoritative list,
+stable per-club ids — e.g. Bulgaria's `/club/138`). It is **wrong for html directory
+listings**, for two reasons found on Croatia + Romania:
+
+- **A federation often publishes the same clubs in several overlapping lists.** Croatia
+  (`CRO`) has a plain table (`hos-cvf.hr/odbojkaski_klubovi.php`, no detail pages) **and** a
+  richer registry (`natjecanja.hos-cvf.hr`, per-club detail pages). A detail-path key gives
+  the *same club* a different key in each list → duplicate rows. A **name-based** key
+  (`<fed>:<uslug(name)>:<uslug(city)>`) is stable across lists, so the same club **merges**
+  and `detail_url`/`website` are **backfilled** from whichever list is richer.
+- **Detail-URL schemes vary and aren't path-unique.** Croatia's detail URL is
+  `…/index.php?rubrika=klub&obrazac=1&id=203` — the *path* is constant (`/index.php`) and the
+  id lives in the **query string**, so `urlPath(detail)` collapses every club to
+  `<fed>:/index.php`. Romania's is a path slug (`/cluburi_volei/<slug>/`). No single
+  detail-path rule keys both.
+
+**Decision (html extractor only):** `dedup_key = <fed>:<uslug(name)>:<uslug(city)>` always;
+`detail_url` is a **backfilled field**, never part of the key. On update, non-empty
+`detail_url`/`website` are written but never blanked (so a later, poorer list can't erase a
+richer one). The catalog/API extractor (`extract-clubs.json`) is unchanged — its detail-path
+identity still holds for stable-id catalogs, and switching it would orphan existing
+detail-path keys (Bulgaria's 139). Tradeoff: two genuinely distinct clubs sharing
+name+city would merge (rare; accepted). City must be normalized consistently (town only, no
+postal code) or a club can split across lists — the extractor prompt enforces this.
+
+### Robust `detail_url` detection (html)
+
+Detail links must be detected **consistently** regardless of layout:
+
+1. The LLM returns `detail_url` = the exact href the club's name/row links to (copy, never
+   invent).
+2. **Deterministic backstop:** the `Apply` node builds a map of *normalized anchor text →
+   same-site href* from the scraped Markdown; if the LLM left `detail_url` empty, it fills it
+   by matching the club name. Normalization strips markdown `**`, trailing `(category codes)`,
+   case and non-alphanumerics, so `**C.S.S. BACAU (JM, JF…)**` matches club `C.S.S. BACAU`.
+3. Any `detail_url` (LLM or backstop) must be **same-site** as the directory, else dropped —
+   blocks social/aggregator links and self-referential "view page" links to the listing.
+
 ## File-level changes
 
 1. **`n8n/extract-clubs.json`** (api/embedded-JSON extractor — `Apply & upsert` node):

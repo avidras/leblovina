@@ -92,7 +92,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const fed = $('Get Federation').first().json;\nconst body = ($('Webhook').first().json.body) || {};\nlet url = body.url || '';\nif (!url) {\n  const dirs = Array.isArray(fed.directory_urls) ? fed.directory_urls : [];\n  const e = dirs.find(d => d && ['static','js'].includes(d.extraction_method) && /^https?:\\/\\//.test(d.url||''));\n  url = e ? e.url : '';\n}\nif (!url) return [{ json: { __skip: true, note: 'no static/js directory page' } }];\nreturn [{ json: { url } }];\n"
+        "jsCode": "const fed = $('Get Federation').first().json;\nconst body = ($('Webhook').first().json.body) || {};\nlet items = [];\nif (body.url) {\n  items = [{ url: String(body.url), region: '' }];\n} else {\n  const dirs = Array.isArray(fed.directory_urls) ? fed.directory_urls : [];\n  items = dirs\n    .filter(d => d && ['static','js','pdf'].includes(d.extraction_method) && /^https?:\\/\\//.test(d.url || ''))\n    .map(d => ({ url: d.url, region: d.region || '' }));\n}\nif (!items.length) return [{ json: { __skip: true, note: 'no static/js/pdf directory page' } }];\nreturn items.map(it => ({ json: it }));\n"
       },
       "id": "pick",
       "name": "pick url",
@@ -111,13 +111,13 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ url: $('pick url').item.json.url, formats: ['json'], jsonOptions: { prompt: 'Extract every volleyball club/society listed on this page. Return an array '+ String.fromCharCode(34) + 'clubs' + String.fromCharCode(34) + ' of objects with name, city, region, website (the club own website if shown, else empty), detail_url (a link to this club detail/profile page within this directory, if present). Only real clubs, not navigation.', schema: { type:'object', properties: { clubs: { type:'array', items: { type:'object', properties: { name:{type:'string'}, city:{type:'string'}, region:{type:'string'}, website:{type:'string'}, detail_url:{type:'string'} } } } } } } }) }}",
+        "jsonBody": "={{ JSON.stringify({ url: $('pick url').item.json.url, formats: ['markdown'], onlyMainContent: false, timeout: 100000 }) }}",
         "options": {
           "timeout": 120000
         }
       },
       "id": "fcx",
-      "name": "Firecrawl Extract",
+      "name": "Firecrawl Scrape",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -136,7 +136,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const PB_URL = ($('Config').first().json.pbUrl || '').replace(/\\/+$/, '');\nconst token = $('PB Auth').first().json.token; const pbH = { Authorization: token };\nconst fed = $('Get Federation').first().json; const fedId = fed.id;\nconst pick = $('pick url').first().json;\nif (pick.__skip) {\n  await this.helpers.httpRequest({ method:'PATCH', url:PB_URL+'/api/collections/federations/records/'+fedId, headers:pbH, body:{ status:'needs_review', notes:pick.note }, json:true });\n  return [{ json: { ok:false, note: pick.note } }];\n}\nconst fivb = String(fed.fivb_code||'').toUpperCase(); const country = fed.country||'';\nconst fcx = $('Firecrawl Extract').first().json;\nconst clubs = (((fcx.data||{}).json||{}).clubs) || [];\nconst dirs = Array.isArray(fed.directory_urls) ? fed.directory_urls : [];\nconst entry = dirs.find(d => d && d.url === pick.url) || {};\nconst dirRegion = entry.region || '';\nconst uslug = (s) => String(s||'').toLowerCase().normalize('NFKC').replace(/[^\\p{L}\\p{N}]+/gu,'-').replace(/^-+|-+$/g,'').slice(0,60);\nconst baseOrigin = (function(){ const m=String(pick.url||'').match(/^(https?:\\/\\/[^/]+)/i); return m?m[1]:''; })();\nconst urlPath = (s) => { s=String(s||'').trim(); if(!s) return ''; const m=s.match(/^https?:\\/\\/[^/]+(\\/[^?#]*)/i); if(m) return m[1]; return (s.startsWith('/')?s:('/'+s)).split('?')[0].split('#')[0]; };\nconst normUrl = (u) => { u=(u||'').trim().replace(/^https?:\\/\\//i,''); if(!u) return ''; if(/[\\s,]/.test(u)||!u.includes('.')) return ''; return 'https://'+u; };\nconst now = new Date().toISOString();\nconst absol = (u) => { u=String(u||'').trim(); if(!u) return ''; if(/^https?:\\/\\//i.test(u)) return u; if(u.startsWith('//')) return 'https:'+u; if(u.startsWith('/')) return baseOrigin ? baseOrigin+u : ''; return baseOrigin ? baseOrigin+'/'+u.replace(/^\\.?\\//,'') : ''; };\nconst findByKey = async (k) => { const r = await this.helpers.httpRequest({ method:'GET', url:PB_URL+'/api/collections/clubs/records', qs:{ filter:\"(dedup_key='\"+k+\"')\", perPage:1 }, headers:pbH, json:true }); return (r.items&&r.items[0])||null; };\nlet created=0, updated=0, failed=0; const errors=[];\nfor (const c of clubs) {\n  const name = String(c.name||'').trim(); if (!name) continue;\n  const city = String(c.city||'').trim(); const region = String(c.region||'').trim() || dirRegion; const website = normUrl(c.website); const detailRaw = String(c.detail_url||'').trim(); const detail = absol(detailRaw); const stableId = detailRaw ? urlPath(detailRaw) : '';\n  const dedup = stableId ? (fivb+':'+stableId) : (fivb+':'+uslug(name)+':'+uslug(city));\n  const payload = { federation:fedId, name, country, region, city, website_url:website, website_source: website?'official_list':'none', source_url:pick.url, source_club_id:stableId, dedup_key:dedup, detail_url:detail, last_scraped:now };\n  try {\n    try { await this.helpers.httpRequest({ method:'POST', url:PB_URL+'/api/collections/clubs/records', headers:pbH, body:Object.assign({status:'new'},payload), json:true }); created++; }\n    catch(e) { const ex = await findByKey(dedup); if (ex) { await this.helpers.httpRequest({ method:'PATCH', url:PB_URL+'/api/collections/clubs/records/'+ex.id, headers:pbH, body:payload, json:true }); updated++; } else throw e; }\n  } catch(e) { failed++; if (errors.length<10) errors.push({ key:dedup, message:(e&&e.message)||String(e) }); }\n}\nconst fstatus = failed===0 ? 'scraped' : 'error';\nawait this.helpers.httpRequest({ method:'PATCH', url:PB_URL+'/api/collections/federations/records/'+fedId, headers:pbH, body:{ status:fstatus, last_scraped:now }, json:true });\nreturn [{ json: { ok: failed===0, federation:fivb, page:pick.url, total:clubs.length, created, updated, failed, errors } }];\n"
+        "jsCode": "const PB_URL = ($('Config').first().json.pbUrl || '').replace(/\\/+$/, '');\nconst token = $('PB Auth').first().json.token; const pbH = { Authorization: token };\nconst fed = $('Get Federation').first().json; const fedId = fed.id;\nconst setFed = (body) => this.helpers.httpRequest({ method:'PATCH', url:PB_URL+'/api/collections/federations/records/'+fedId, headers:pbH, body, json:true });\n\nconst picks = $('pick url').all().map(i => i.json);\nif (picks.length === 1 && picks[0].__skip) {\n  await setFed({ status:'needs_review', notes:picks[0].note });\n  return [{ json: { ok:false, note: picks[0].note } }];\n}\nconst scrapes = $('Firecrawl Scrape').all().map(i => i.json);\nconst agents  = $('Extract clubs').all().map(i => i.json);\n\nconst fivb = String(fed.fivb_code||'').toUpperCase(); const country = fed.country||'';\nconst dirs = Array.isArray(fed.directory_urls) ? fed.directory_urls : [];\nconst uslug = (s) => String(s||'').toLowerCase().normalize('NFKC').replace(/[^\\p{L}\\p{N}]+/gu,'-').replace(/^-+|-+$/g,'').slice(0,60);\nconst nkey  = (s) => String(s||'').toLowerCase().normalize('NFKD').replace(/\\*+/g,'').replace(/\\([^)]*\\)/g,' ').replace(/[^\\p{L}\\p{N}]+/gu,'');   // anchor<->name match\nconst normUrl = (u) => { u=(u||'').trim().replace(/^https?:\\/\\//i,''); if(!u) return ''; if(/[\\s,]/.test(u)||!u.includes('.')) return ''; return 'https://'+u; };\nconst now = new Date().toISOString();\nconst findByKey = async (k) => { const r = await this.helpers.httpRequest({ method:'GET', url:PB_URL+'/api/collections/clubs/records', qs:{ filter:\"(dedup_key='\"+k+\"')\", perPage:1 }, headers:pbH, json:true }); return (r.items&&r.items[0])||null; };\nconst hostOf = (u) => String(u||'').replace(/^https?:\\/\\//i,'').replace(/^www\\./i,'').split('/')[0].toLowerCase();\n\nlet created=0, updated=0, failed=0, totalClubs=0, scrapeFails=0; const errors=[]; const perDir=[];\nfor (let i=0;i<picks.length;i++){\n  const pick = picks[i]||{}; const fc = scrapes[i]||{}; const ag = agents[i]||{};\n  const srcUrl = pick.url || '';\n  const md = (fc && fc.data && fc.data.markdown) || '';\n  if (!md){ scrapeFails++; errors.push({ url:srcUrl, message:'scrape failed: '+((fc&&(fc.error||fc.code))||'no markdown') }); continue; }\n\n  const baseOrigin = (function(){ const m=String(srcUrl).match(/^(https?:\\/\\/[^/]+)/i); return m?m[1]:''; })();\n  const dirHost = hostOf(baseOrigin);\n  const absol = (u) => { u=String(u||'').trim(); if(!u) return ''; if(/^https?:\\/\\//i.test(u)) return u; if(u.startsWith('//')) return 'https:'+u; if(u.startsWith('/')) return baseOrigin ? baseOrigin+u : ''; return baseOrigin ? baseOrigin+'/'+u.replace(/^\\.?\\//,'') : ''; };\n\n  // Deterministic backstop: normalized anchor text -> same-site href (skips in-page #anchors).\n  const linkMap = {}; const re=/\\[([^\\]]*)\\]\\(([^)\\s]+)\\)/g; let mm;\n  while((mm=re.exec(md))){ const a=nkey(mm[1]); let href=mm[2]; if(!a||!href||href.indexOf('#')>=0) continue; const abs=absol(href); if(!abs||hostOf(abs)!==dirHost) continue; if(!linkMap[a]) linkMap[a]=abs; }\n\n  const entry = dirs.find(d => d && d.url === srcUrl) || {};\n  const dirRegion = entry.region || pick.region || '';\n\n  let raw=String(ag.output||'').trim().replace(/^```(json)?/i,'').replace(/```$/,'').trim();\n  let parsed; try{ parsed=JSON.parse(raw); }catch(e){ const x=raw.match(/\\{[\\s\\S]*\\}/); parsed=x?JSON.parse(x[0]):{}; }\n  const clubs = Array.isArray(parsed.clubs)?parsed.clubs:[];\n  totalClubs += clubs.length; let dc=0, du=0;\n  for (const c of clubs){\n    const name = String(c.name||'').replace(/\\*+/g,'').trim(); if(!name) continue;\n    const city = String(c.city||'').trim(); const region = String(c.region||'').trim() || dirRegion;\n    let website = normUrl(c.website);\n    if (website && dirHost && hostOf(website)===dirHost) website='';   // not the club's own site\n    let detail = absol(String(c.detail_url||'').trim());\n    if (detail && hostOf(detail)!==dirHost) detail='';                 // must be same-site\n    if (!detail){ const hit = linkMap[nkey(name)]; if(hit) detail=hit; } // backstop by club name\n    const dedup = fivb+':'+uslug(name)+':'+uslug(city);\n    const base = { federation:fedId, name, country, region, city, dedup_key:dedup, last_scraped:now };\n    const full = Object.assign({}, base, { website_url:website, website_source: website?'official_list':'none', detail_url:detail, source_url:srcUrl, status:'new' });\n    try {\n      try { await this.helpers.httpRequest({ method:'POST', url:PB_URL+'/api/collections/clubs/records', headers:pbH, body:full, json:true }); created++; dc++; }\n      catch(e){\n        const ex = await findByKey(dedup);\n        if (ex){\n          const patch = Object.assign({}, base);                       // backfill: never blank a richer value\n          if (website){ patch.website_url=website; patch.website_source='official_list'; }\n          if (detail) patch.detail_url=detail;\n          if (!ex.source_url) patch.source_url=srcUrl;\n          await this.helpers.httpRequest({ method:'PATCH', url:PB_URL+'/api/collections/clubs/records/'+ex.id, headers:pbH, body:patch, json:true }); updated++; du++;\n        } else throw e;\n      }\n    } catch(e){ failed++; if(errors.length<10) errors.push({ key:dedup, message:(e&&e.message)||String(e) }); }\n  }\n  perDir.push({ url:srcUrl, clubs:clubs.length, created:dc, updated:du });\n}\n\nlet status;\nif (created+updated>0 && failed===0) status='scraped';\nelse if (failed>0) status='error';\nelse if (scrapeFails>0 && created+updated===0) status='error';\nelse status='needs_review';     // scrapes ok but zero clubs\nawait setFed({ status, last_scraped:now });\nreturn [{ json: { ok: failed===0 && status==='scraped', federation:fivb, directories:perDir, total:totalClubs, created, updated, failed, scrapeFails, errors } }];\n"
       },
       "id": "apply",
       "name": "Apply & upsert",
@@ -160,6 +160,49 @@
       "position": [
         560,
         0
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-sonnet-4-6"
+        },
+        "options": {
+          "maxTokensToSample": 16000
+        }
+      },
+      "id": "model",
+      "name": "Anthropic Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        1120,
+        460
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "PsTv3b7j6pP2jeMt",
+          "name": "Anthropic (leblovina)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Firecrawl Scrape').item.json.data && $('Firecrawl Scrape').item.json.data.markdown ? $('Firecrawl Scrape').item.json.data.markdown : 'No content.' }}",
+        "options": {
+          "systemMessage": "You extract volleyball clubs from a national federation's club-directory page, given as Markdown (usually a table or list). Return ONLY a JSON object - no prose, no code fences - of shape {\"clubs\":[{\"name\":string,\"city\":string,\"region\":string,\"website\":string,\"detail_url\":string}]}. Include EVERY real club/society; ignore navigation, headers, filters, pagination and social links. For each club: name = the club's name (required; skip nameless rows); strip markdown bold (**) and any trailing category codes in parentheses. city = its town (strip postal codes and street address). region = state/county/regional federation if shown, else \"\". website = the club's OWN external website if shown (e.g. www.club.hr), else \"\" - NEVER a link that points back to this directory/listing or to the federation's own site. detail_url = THE HREF that this club's own name/row links to - its profile/detail page within this directory (e.g. /cluburi_volei/<slug>/ or ...?id=123). Copy the exact URL from the Markdown link; do NOT invent or guess; if the club has no such link, \"\". Use \"\" for any missing field, never null. If there are no clubs, return {\"clubs\":[]}."
+        }
+      },
+      "id": "extract",
+      "name": "Extract clubs",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        1120,
+        280
       ]
     }
   ],
@@ -212,14 +255,25 @@
       "main": [
         [
           {
-            "node": "Firecrawl Extract",
+            "node": "Firecrawl Scrape",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Firecrawl Extract": {
+    "Firecrawl Scrape": {
+      "main": [
+        [
+          {
+            "node": "Extract clubs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract clubs": {
       "main": [
         [
           {
@@ -236,6 +290,17 @@
           {
             "node": "Respond",
             "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extract clubs",
+            "type": "ai_languageModel",
             "index": 0
           }
         ]

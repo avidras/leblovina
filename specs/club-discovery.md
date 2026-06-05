@@ -51,14 +51,19 @@ its job is to yield each club's website so Phase 3 can harvest contacts. Directo
 3. **Tooling: Firecrawl + Apify, tiered.** Firecrawl = default (JS render + LLM `/extract`);
    Apify = escalation for Cloudflare/SportsEngine anti-bot + residential proxies; Serper =
    discovery + the no-site gap-fill; plain HTTP = clean APIs; Claude = classify/extract brain.
-4. **Club identity: computed `dedup_key`** — a **deterministic** stable id derived from the
-   per-club **detail URL/path** when present (`<fed>:<urlPath(detail)>`), else a
-   **Unicode-safe** `<fed>:<uslug(name)>:<uslug(city)>`. The id is *not* taken from the
-   volatile LLM field-mapping, and `uslug` keeps non-Latin letters so Cyrillic/Greek names
-   don't collapse. One unique index; works for website-less clubs; idempotent reruns. See
-   [`club-dedup-stability.md`](./club-dedup-stability.md) (fixes the Bulgaria collapse). NB:
-   the n8n Code-node sandbox has **no global `URL`** — URL absolutize/path helpers are pure
-   string ops, never `new URL()`.
+   NB: the `static`/`js` html extractor scrapes **markdown** (reliable) and extracts clubs with
+   our own Claude agent — *not* Firecrawl's json/`/extract` mode, which intermittently
+   `SCRAPE_TIMEOUT`s and was silently reporting `scraped` with 0 clubs. See
+   [`club-extract-html-reliability.md`](./club-extract-html-reliability.md).
+4. **Club identity: computed `dedup_key`**, **Unicode-safe** (`uslug`, `\p{L}\p{N}`) so
+   Cyrillic/Greek names don't collapse. **Html directories** (often several overlapping lists
+   per federation, varied detail-URL schemes) use a **name-based** key
+   `<fed>:<uslug(name)>:<uslug(city)>` so the same club **merges across lists**; `detail_url`
+   is a backfilled field. **Catalog/API sources** with stable per-club ids keep
+   `<fed>:<urlPath(detail)>`. One unique index; works for website-less clubs; idempotent
+   reruns/merges. See [`club-dedup-stability.md`](./club-dedup-stability.md) (Bulgaria collapse
+   + the Croatia/Romania merge amendment). NB: the n8n Code-node sandbox has **no global
+   `URL`** — absolutize/path helpers are pure string ops, never `new URL()`.
 5. **Discovery gate — UI-controlled policy.** The gate is *not* hardcoded in the workflow; it
    reads a policy from PocketBase that the UI sets, so behaviour is changeable without editing
    n8n. Policy modes (global default, with optional per-federation override):
