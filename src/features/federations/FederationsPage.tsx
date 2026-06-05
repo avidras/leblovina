@@ -11,12 +11,16 @@ import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
 type SortKey = 'fivb_code' | 'name' | 'country' | 'confederation' | 'status' | 'last_scraped'
 
+// Status sort order — scraped federations first, untouched (new) last.
+const STATUS_RANK: Record<string, number> = { scraped: 0, needs_review: 1, error: 2, new: 3 }
+const statusRank = (s: string) => (s in STATUS_RANK ? STATUS_RANK[s] : 99)
+
 export function FederationsPage() {
   const { items, loading, error } = useCollection<Federation>('federations', 'name')
   const [conf, setConf] = useState('')
   const [status, setStatus] = useState('')
   const [q, setQ] = useState('')
-  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'name', dir: 'asc' })
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'status', dir: 'asc' })
   const [openId, setOpenId] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [result, setResult] = useState<{ id: string; r: TriggerResult } | null>(null)
@@ -32,9 +36,15 @@ export function FederationsPage() {
       return true
     })
     out = [...out].sort((a, b) => {
-      const av = (a[sort.key] ?? '').toString().toLowerCase()
-      const bv = (b[sort.key] ?? '').toString().toLowerCase()
-      return (av < bv ? -1 : av > bv ? 1 : 0) * (sort.dir === 'asc' ? 1 : -1)
+      let cmp: number
+      if (sort.key === 'status') {
+        cmp = statusRank(a.status) - statusRank(b.status)
+      } else {
+        const av = (a[sort.key] ?? '').toString().toLowerCase()
+        const bv = (b[sort.key] ?? '').toString().toLowerCase()
+        cmp = av < bv ? -1 : av > bv ? 1 : 0
+      }
+      return cmp * (sort.dir === 'asc' ? 1 : -1)
     })
     return out
   }, [items, conf, status, q, sort])

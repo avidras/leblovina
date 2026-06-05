@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { pb, GATE_MODES, type GateMode } from '@/lib/pb'
 import { getGateMode, setGateMode } from '@/lib/settings'
 import { Login } from '@/components/Login'
@@ -7,11 +7,34 @@ import { Select } from '@/components/ui/select'
 import { FederationsPage } from '@/features/federations/FederationsPage'
 import { ClubsPage } from '@/features/clubs/ClubsPage'
 
-type View = 'federations' | 'clubs'
+const VIEWS = ['federations', 'clubs'] as const
+type View = (typeof VIEWS)[number]
+
+// The current view lives in the URL path (`/federations`, `/clubs`) so it
+// survives a page refresh. PocketBase serves the SPA with index.html fallback,
+// so deep links resolve in prod the same as Vite's dev server does.
+function pathToView(path: string): View {
+  const seg = path.replace(/^\/+/, '').split('/')[0]
+  return (VIEWS as readonly string[]).includes(seg) ? (seg as View) : 'federations'
+}
+
+function useView(): [View, (v: View) => void] {
+  const [view, setView] = useState<View>(() => pathToView(window.location.pathname))
+  useEffect(() => {
+    const onPop = () => setView(pathToView(window.location.pathname))
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+  const navigate = useCallback((v: View) => {
+    if (v !== pathToView(window.location.pathname)) window.history.pushState(null, '', '/' + v)
+    setView(v)
+  }, [])
+  return [view, navigate]
+}
 
 export default function App() {
   const [authed, setAuthed] = useState(pb.authStore.isValid)
-  const [view, setView] = useState<View>('federations')
+  const [view, navigate] = useView()
 
   useEffect(() => pb.authStore.onChange(() => setAuthed(pb.authStore.isValid)), [])
 
@@ -23,8 +46,8 @@ export default function App() {
         <div className="mx-auto flex max-w-7xl items-center gap-4 px-6 py-3">
           <span className="font-semibold">Leblovina</span>
           <nav className="flex gap-1">
-            <NavButton active={view === 'federations'} onClick={() => setView('federations')}>Federations</NavButton>
-            <NavButton active={view === 'clubs'} onClick={() => setView('clubs')}>Clubs</NavButton>
+            <NavButton active={view === 'federations'} onClick={() => navigate('federations')}>Federations</NavButton>
+            <NavButton active={view === 'clubs'} onClick={() => navigate('clubs')}>Clubs</NavButton>
           </nav>
           <div className="ml-auto flex items-center gap-3">
             <GateSelector />
