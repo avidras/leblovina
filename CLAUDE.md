@@ -218,6 +218,28 @@ Enums:
 - Subscribe to PocketBase realtime on the relevant collection so the table updates live
   as n8n writes rows mid-run.
 
+### Managing deployed workflows directly (n8n + PocketBase APIs)
+
+The committed JSON exports under `n8n/` are **not** auto-applied — n8n only runs what's
+imported into the live instance. So a fix to an export does nothing until the deployed
+workflow is updated. **Use the credentials in the local `.env` to drive both APIs directly**
+— the same way for n8n as for PocketBase — to inspect, patch, and verify deployed workflows
+and data from the CLI (e.g. updating a Code node, then triggering the webhook to confirm).
+The `.env` is gitignored (never committed); these are operational creds, not app config.
+
+- **n8n public API** — `N8N_BASE_URL` + `N8N_API_KEY` (header `X-N8N-API-KEY`). List/get/PUT
+  workflows at `$N8N_BASE_URL/api/v1/workflows[/{id}]`; trigger a workflow with
+  `POST $N8N_BASE_URL/webhook/<path>`. A `PUT` accepts only `name`, `nodes`, `connections`,
+  `settings` — strip the other fields the `GET` returns. **Keep the `n8n/` export in sync:**
+  edit the repo JSON and PUT the live workflow together, so committed exports never drift
+  from what's deployed.
+- **PocketBase admin API** — `PB_ADMIN_EMAIL` + `PB_ADMIN_PASSWORD`. Auth via
+  `POST $VITE_PB_URL/api/collections/_superusers/auth-with-password` and pass the returned
+  `token` as the `Authorization` header to read/patch records (clubs aren't publicly listable).
+- Other provider keys in `.env` (`SERPER_API_KEY`, `FIRECRAWL_API_KEY`, `APIFY_API_TOKEN`,
+  `ANTHROPIC_API_KEY`) are there for reproducing/debugging an n8n node's call locally. The app
+  itself still needs none of them — at runtime those secrets live in n8n (see Conventions).
+
 ## Dev setup
 
 **Local dev runs PocketBase as a bare binary — no Docker.** PocketBase is a single binary;
