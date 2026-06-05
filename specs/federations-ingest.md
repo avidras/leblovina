@@ -97,8 +97,10 @@ unique index.
 
 ## n8n workflow
 
-Importable export committed at `n8n/scrape-federations.json` (see `n8n/README.md` for import
-+ required env vars). Credentials stay in n8n, not in the export. Design:
+Importable export committed at `n8n/scrape-federations.json` (see `n8n/README.md`). Auth is an
+n8n **Custom Auth credential** named `PocketBase admin` (PB superuser `identity`/`password`),
+configured in the n8n UI — no host env vars, no secrets in the export. The non-secret PB URL
+lives in the workflow's **Config** node. Design:
 
 Webhook-triggered, single pass:
 
@@ -106,18 +108,21 @@ Webhook-triggered, single pass:
    `rescrape` does not change the fetch — it forces extraction even when `last_scraped` is
    set. For federations the pass is the same either way; the flag is plumbed for symmetry
    and to allow "skip recently-scraped" logic later.
-2. **HTTP Request** → the VIS `GetFederationList` URL above. Response is XML.
-3. **XML parse** → array of `Federation` attribute objects.
-4. **Map** each row to the field mapping above; normalize `website_url`.
-5. **Find-or-create per row** (PocketBase has no upsert):
+2. **Config** (Set) — holds `pbUrl` + `visUrl` (non-secret).
+3. **HTTP Request** → the VIS `GetFederationList` URL. Response is XML (text).
+4. **XML parse** → array of `Federation` attribute objects.
+5. **PB Auth** (HTTP Request) → `POST {pbUrl}/api/collections/_superusers/auth-with-password`
+   using the `PocketBase admin` credential; returns the superuser token.
+6. **Code** — maps each row (normalize `website_url`), then find-or-create per row using the
+   token from PB Auth (Code nodes can't read credentials, so the token is passed in):
    - `GET /api/collections/federations/records?filter=(fivb_code='<code>')&perPage=1`
-   - if found → `PATCH` that record (update mutable fields; leave `status` untouched);
-     else → `POST` create with `status="new"`.
-   - Catch the unique-constraint error (`validation_not_unique`) on create as a benign
-     race → fall back to update. Reruns are idempotent.
+   - if found → `PATCH` that record (leave `status` untouched); else → `POST` with
+     `status="new"`. On a unique-constraint race, re-query and PATCH. Reruns are idempotent.
    - Set `last_scraped` = run time on both paths.
-6. The UI subscribes to PocketBase realtime on `federations`, so rows appear/refresh live
-   during the run.
+7. **Respond** → `{ ok, total, created, updated, failed, rescrape, errors }`.
+
+Later, the UI subscribes to PocketBase realtime on `federations`, so rows appear/refresh live
+during the run.
 
 The UI button POSTs to the webhook URL held in `VITE_N8N_SCRAPE_FEDERATIONS_URL`
 (never hardcoded). Per-row "Rescrape" POSTs the same webhook with the `rescrape` header.
@@ -132,7 +137,8 @@ The UI button POSTs to the webhook URL held in `VITE_N8N_SCRAPE_FEDERATIONS_URL`
 
 ## Out of scope
 
-- n8n **credentials** / the live webhook URL (stay in n8n; the committed JSON has neither).
+- The `PocketBase admin` n8n credential value + the live webhook URL (stay in n8n; the
+  committed JSON has neither).
 - Splitting federation `email` into per-contact rows, MX/verification, quality — Phase 3.
 - `clubs` / `club_directory_url` / `extraction_method` population — Phase 2.
 - The UI page + buttons themselves — tracked under the Phase 1 UI work, not this ingest spec
