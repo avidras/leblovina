@@ -1,0 +1,420 @@
+{
+  "name": "Leblovina — Discover clubs (agent)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "discover-agent",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        0
+      ],
+      "webhookId": "discover-agent"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p",
+              "name": "pbUrl",
+              "value": "https://leblovina.tools.biceps.digital",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -420,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -240,
+        0
+      ],
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "hzdBwrAqrPZjDmME",
+          "name": "PocketBase admin (api)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/federations/records/{{ $('Webhook').item.json.body.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('PB Auth').item.json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "getfed",
+      "name": "Get Federation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -60,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://google.serper.dev/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ q: $('Get Federation').item.json.country + ' volleyball federation member clubs directory list società kluby vereine clubes', num: 10 }) }}",
+        "options": {}
+      },
+      "id": "serper",
+      "name": "Serper Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        140,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "oPmSDcClj5DfGKCM",
+          "name": "Serper (leblovina)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.firecrawl.dev/v1/map",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $('Get Federation').item.json.website_url, limit: 80 }) }}",
+        "options": {}
+      },
+      "id": "fcmap",
+      "name": "Firecrawl Map",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        340,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ZxHAcWu5UlNAMy8X",
+          "name": "Firecrawl (leblovina)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-sonnet-4-6"
+        },
+        "options": {}
+      },
+      "id": "model",
+      "name": "Anthropic Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        540,
+        220
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "PsTv3b7j6pP2jeMt",
+          "name": "Anthropic (leblovina)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Federation to investigate:\nName: {{ $('Get Federation').item.json.name }}\nCountry: {{ $('Get Federation').item.json.country }}\nConfederation: {{ $('Get Federation').item.json.confederation }}\nKnown website (may be outdated): {{ $('Get Federation').item.json.website_url }}\n\nStarting Google results:\n{{ JSON.stringify(($('Serper Search').item.json.organic || []).slice(0,10)) }}\n\nStarting site URLs (Firecrawl map):\n{{ JSON.stringify(($('Firecrawl Map').item.json.links || []).slice(0,60)) }}\n\nInvestigate (use your tools as needed) and respond with the JSON object.",
+        "options": {
+          "systemMessage": "You are a discovery agent for a volleyball-club lead-gen pipeline. Given a national volleyball federation, locate the web page(s) that list its member CLUBS and classify how to extract them.\n\nArchetypes: (A) open JSON/REST API returning all clubs; (B) keyed/federated API (e.g. SAMS); (C) federated static HTML tables across many regional sub-sites; (D) JS-rendered / anti-bot directory; (E) login-gated registry; (F) no directory.\nThe club registry is often NOT on the federation's own domain (a separate registration system or regional sub-sites), and the stored website may be OUTDATED.\n\nYou have two tools:\n- serper_search(query): Google search, returns top results.\n- firecrawl_scrape(url): fetch a page as markdown (renders JavaScript).\nThe Google results and site-URL list given below are only a STARTING POINT. ACTIVELY use the tools to dig: search for the federation's real official site and its club registry (try the country + 'volleyball clubs', the federation acronym, and native-language terms like kluby/societa/vereine/clubes/clubs affilies/arabic), and scrape candidate pages to confirm they actually list clubs before concluding. Only return found=false after genuinely trying multiple searches and at least one scrape.\n\nClassify extraction_method as exactly one of: api_endpoint, static, js, pdf, none.\n\nWhen done, respond with ONLY a JSON object, no prose and no code fences:\n{\"found\": boolean, \"primary_directory_url\": string, \"directories\": [{\"url\": string, \"region\": string, \"extraction_method\": \"api_endpoint|static|js|pdf|none\"}], \"confidence\": \"high|medium|low\", \"notes\": string}"
+        }
+      },
+      "id": "agent",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        540,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL = ($('Config').first().json.pbUrl || '').replace(/\\/+$/, '');\nconst token = $('PB Auth').first().json.token;\nconst pbH = { Authorization: token };\nconst fedId = (($('Webhook').first().json.body) || {}).id;\n\nlet raw = String($('AI Agent').first().json.output || '').trim()\n  .replace(/^```(json)?/i, '').replace(/```$/, '').trim();\nlet parsed;\ntry { parsed = JSON.parse(raw); }\ncatch (e) { const m = raw.match(/\\{[\\s\\S]*\\}/); parsed = m ? JSON.parse(m[0]) : { found:false, notes:'unparseable agent output', _raw: raw.slice(0,300) }; }\n\nconst dirs = Array.isArray(parsed.directories) ? parsed.directories : [];\nconst m0 = dirs[0] || {};\nconst validM = ['static','js','api_endpoint','pdf','none'];\nconst method = validM.includes(parsed.extraction_method) ? parsed.extraction_method\n             : (validM.includes(m0.extraction_method) ? m0.extraction_method : '');\nlet primary = parsed.primary_directory_url || m0.url || '';\nif (!/^https?:\\/\\//i.test(primary)) primary = '';\nconst now = new Date().toISOString();\n\nawait this.helpers.httpRequest({\n  method: 'PATCH', url: PB_URL + '/api/collections/federations/records/' + fedId, headers: pbH,\n  body: {\n    club_directory_url: primary,\n    directory_urls: dirs,\n    extraction_method: method,\n    status: 'needs_review',\n    notes: (parsed.confidence ? '[' + parsed.confidence + '] ' : '') + (parsed.notes || ''),\n    last_scraped: now,\n  }, json: true,\n});\n\nreturn [{ json: { ok: !!parsed.found, federation: fedId, primary_directory_url: primary, extraction_method: method, directories: dirs, confidence: parsed.confidence, notes: parsed.notes } }];\n"
+      },
+      "id": "write",
+      "name": "Parse & Write",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "resp",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        940,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "toolDescription": "Search Google. Input a query string to find a volleyball federation's club directory/registry or its real official website. Returns top organic results.",
+        "method": "POST",
+        "url": "https://google.serper.dev/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"q\": \"{query}\",\n  \"num\": 10\n}",
+        "placeholderDefinitions": {
+          "values": [
+            {
+              "name": "query",
+              "description": "the Google search query",
+              "type": "string"
+            }
+          ]
+        },
+        "optimizeResponse": true
+      },
+      "id": "serper_search",
+      "name": "serper_search",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        540,
+        400
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "oPmSDcClj5DfGKCM",
+          "name": "Serper (leblovina)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "Fetch a web page rendered as markdown (handles JavaScript). Input a full URL. Use to open a candidate page and check whether it lists volleyball clubs, or to find the real registry domain.",
+        "method": "POST",
+        "url": "https://api.firecrawl.dev/v1/scrape",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"url\": \"{url}\",\n  \"formats\": [\"markdown\"],\n  \"onlyMainContent\": true\n}",
+        "placeholderDefinitions": {
+          "values": [
+            {
+              "name": "url",
+              "description": "the full URL to fetch",
+              "type": "string"
+            }
+          ]
+        },
+        "optimizeResponse": true
+      },
+      "id": "firecrawl_scrape",
+      "name": "firecrawl_scrape",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        400
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ZxHAcWu5UlNAMy8X",
+          "name": "Firecrawl (leblovina)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "PB Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PB Auth": {
+      "main": [
+        [
+          {
+            "node": "Get Federation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Federation": {
+      "main": [
+        [
+          {
+            "node": "Serper Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Serper Search": {
+      "main": [
+        [
+          {
+            "node": "Firecrawl Map",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firecrawl Map": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse & Write",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Write": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "serper_search": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "firecrawl_scrape": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "templateId": "leblovina-discover-agent"
+  }
+}
