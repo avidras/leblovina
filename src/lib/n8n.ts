@@ -1,0 +1,44 @@
+import { pb, type Federation } from './pb'
+
+// UI triggers n8n workflows via webhook URLs held in env vars (never hardcoded).
+const DISCOVER_CLUBS_URL = import.meta.env.VITE_N8N_DISCOVER_CLUBS_URL as string | undefined
+
+export interface TriggerResult {
+  ok: boolean
+  status: number
+  body?: unknown
+  error?: string
+}
+
+async function postWebhook(url: string, body: unknown, rescrape = false): Promise<TriggerResult> {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(rescrape ? { rescrape: 'true' } : {}) },
+      body: JSON.stringify(body),
+    })
+    let parsed: unknown
+    try {
+      parsed = await res.json()
+    } catch {
+      parsed = undefined
+    }
+    return { ok: res.ok, status: res.status, body: parsed }
+  } catch (e) {
+    return { ok: false, status: 0, error: (e as Error).message }
+  }
+}
+
+// Phase 2: discover (and, per the gate, maybe extract) clubs for one federation.
+export async function triggerDiscoverClubs(fed: Federation, rescrape = false): Promise<TriggerResult> {
+  if (!DISCOVER_CLUBS_URL) {
+    return { ok: false, status: 0, error: 'VITE_N8N_DISCOVER_CLUBS_URL is not set' }
+  }
+  // Optimistically reflect that a run was kicked off.
+  try {
+    await pb.collection('federations').update(fed.id, { status: 'new' })
+  } catch {
+    /* non-fatal */
+  }
+  return postWebhook(DISCOVER_CLUBS_URL, { id: fed.id, fivb_code: fed.fivb_code }, rescrape)
+}
