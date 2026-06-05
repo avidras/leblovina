@@ -188,9 +188,23 @@ function FederationRow({
               <Detail label="Source" value={fed.source_url} link />
               <div className="col-span-2">
                 <span className="text-neutral-500">Directory URLs: </span>
-                {fed.directory_urls && fed.directory_urls.length > 0
-                  ? <span>{fed.directory_urls.length} discovered</span>
-                  : <span className="text-neutral-400">none yet</span>}
+                {fed.directory_urls && fed.directory_urls.length > 0 ? (
+                  <ul className="mt-1 space-y-0.5">
+                    {fed.directory_urls.map((d, i) => (
+                      <li key={i} className="flex flex-wrap items-center gap-2">
+                        <a className="text-blue-600 hover:underline break-all" href={d.url} target="_blank" rel="noreferrer">{d.url}</a>
+                        {d.region && <Badge>{d.region}</Badge>}
+                        {d.extraction_method && <Badge tone="blue">{d.extraction_method}</Badge>}
+                      </li>
+                    ))}
+                  </ul>
+                ) : <span className="text-neutral-400">none yet</span>}
+              </div>
+              <div className="col-span-2">
+                <span className="text-neutral-500">Discovery notes: </span>
+                {fed.notes
+                  ? <span className="whitespace-pre-wrap">{fed.notes}</span>
+                  : <span className="text-neutral-400">—</span>}
               </div>
               {result && (
                 <div className="col-span-2 mt-1">
