@@ -13,7 +13,7 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -300,
+        -360,
         0
       ],
       "webhookId": "batch-process"
@@ -22,14 +22,28 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Fan out: one item per federation id. The downstream HTTP node processes them\n// sequentially (each process-federation call ~60s) — the webhook already responded.\nconst body = $json.body || {};\nconst ids = Array.isArray(body.ids) ? body.ids : [];\nreturn ids.filter(Boolean).map(id => ({ json: { id } }));\n"
+        "jsCode": "const body = $json.body || {};\nconst ids = Array.isArray(body.ids) ? body.ids : [];\nreturn ids.filter(Boolean).map(id => ({ json: { id } }));\n"
       },
       "id": "split",
       "name": "Split ids",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -120,
+        -180,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "loop",
+      "name": "Loop",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        0,
         0
       ]
     },
@@ -49,8 +63,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        80,
-        0
+        200,
+        120
       ],
       "onError": "continueRegularOutput"
     }
@@ -71,7 +85,30 @@
       "main": [
         [
           {
+            "node": "Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop": {
+      "main": [
+        [],
+        [
+          {
             "node": "Process federation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process federation": {
+      "main": [
+        [
+          {
+            "node": "Loop",
             "type": "main",
             "index": 0
           }

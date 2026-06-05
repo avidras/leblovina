@@ -125,7 +125,10 @@
           "id": "PsTv3b7j6pP2jeMt",
           "name": "Anthropic (leblovina)"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 8000
     },
     {
       "parameters": {
@@ -142,7 +145,10 @@
       "position": [
         300,
         0
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 8000
     },
     {
       "parameters": {

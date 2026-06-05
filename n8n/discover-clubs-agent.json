@@ -96,7 +96,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ q: $('Get Federation').item.json.country + ' volleyball federation member clubs directory list società kluby vereine clubes', num: 10 }) }}",
+        "jsonBody": "={{ JSON.stringify({ q: $('Get Federation').item.json.country + ' volleyball federation member clubs directory list società kluby vereine clubes', num: 6 }) }}",
         "options": {}
       },
       "id": "serper",
@@ -123,7 +123,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ url: $('Get Federation').item.json.website_url, limit: 80 }) }}",
+        "jsonBody": "={{ JSON.stringify({ url: $('Get Federation').item.json.website_url, limit: 40 }) }}",
         "options": {}
       },
       "id": "fcmap",
@@ -164,14 +164,18 @@
           "id": "PsTv3b7j6pP2jeMt",
           "name": "Anthropic (leblovina)"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 8000
     },
     {
       "parameters": {
         "promptType": "define",
-        "text": "=Federation to investigate:\nName: {{ $('Get Federation').item.json.name }}\nCountry: {{ $('Get Federation').item.json.country }}\nConfederation: {{ $('Get Federation').item.json.confederation }}\nKnown website (may be outdated): {{ $('Get Federation').item.json.website_url }}\n\nStarting Google results:\n{{ JSON.stringify(($('Serper Search').item.json.organic || []).slice(0,10)) }}\n\nStarting site URLs (Firecrawl map):\n{{ JSON.stringify(($('Firecrawl Map').item.json.links || []).slice(0,60)) }}\n\nInvestigate (use your tools as needed) and respond with the JSON object.",
+        "text": "=Federation to investigate:\nName: {{ $('Get Federation').item.json.name }}\nCountry: {{ $('Get Federation').item.json.country }}\nConfederation: {{ $('Get Federation').item.json.confederation }}\nKnown website (may be outdated): {{ $('Get Federation').item.json.website_url }}\n\nStarting Google results:\n{{ JSON.stringify(($('Serper Search').item.json.organic || []).slice(0,10)) }}\n\nStarting site URLs (Firecrawl map):\n{{ JSON.stringify(($('Firecrawl Map').item.json.links || []).slice(0,25)) }}\n\nInvestigate (use your tools as needed) and respond with the JSON object.",
         "options": {
-          "systemMessage": "You are a discovery agent for a volleyball-club lead-gen pipeline. Given a national volleyball federation, locate the web page(s) that list its member CLUBS and classify how to extract them.\n\nArchetypes: (A) open JSON/REST API returning all clubs; (B) keyed/federated API (e.g. SAMS); (C) federated static HTML tables across many regional sub-sites; (D) JS-rendered / anti-bot directory; (E) login-gated registry; (F) no directory.\nThe club registry is often NOT on the federation's own domain (a separate registration system or regional sub-sites), and the stored website may be OUTDATED.\n\nYou have two tools:\n- serper_search(query): Google search, returns top results.\n- firecrawl_scrape(url): fetch a page as markdown (renders JavaScript).\nThe Google results and site-URL list given below are only a STARTING POINT. ACTIVELY use the tools to dig: search for the federation's real official site and its club registry (try the country + 'volleyball clubs', the federation acronym, and native-language terms like kluby/societa/vereine/clubes/clubs affilies/arabic), and scrape candidate pages to confirm they actually list clubs before concluding. Only return found=false after genuinely trying multiple searches and at least one scrape.\n\nClassify extraction_method as exactly one of: api_endpoint, static, js, pdf, none.\n\nWhen done, respond with ONLY a JSON object, no prose and no code fences:\n{\"found\": boolean, \"primary_directory_url\": string, \"directories\": [{\"url\": string, \"region\": string, \"extraction_method\": \"api_endpoint|static|js|pdf|none\"}], \"confidence\": \"high|medium|low\", \"notes\": string}"
+          "systemMessage": "You are a discovery agent for a volleyball-club lead-gen pipeline. Given a national volleyball federation, locate the web page(s) that list its member CLUBS and classify how to extract them.\n\nArchetypes: (A) open JSON/REST API returning all clubs; (B) keyed/federated API (e.g. SAMS); (C) federated static HTML tables across many regional sub-sites; (D) JS-rendered / anti-bot directory; (E) login-gated registry; (F) no directory.\nThe club registry is often NOT on the federation's own domain (a separate registration system or regional sub-sites), and the stored website may be OUTDATED.\n\nYou have two tools:\n- serper_search(query): Google search, returns top results.\n- firecrawl_inspect(url): returns a COMPACT JSON assessment of a page (lists_clubs, sample_club_names, looks_like, links_to_directories, notes). Cheap — prefer it; follow links_to_directories to drill down.\nThe Google results and site-URL list given below are only a STARTING POINT. ACTIVELY use the tools to dig: search for the federation's real official site and its club registry (try the country + 'volleyball clubs', the federation acronym, and native-language terms like kluby/societa/vereine/clubes/clubs affilies/arabic), and scrape candidate pages to confirm they actually list clubs before concluding. Only return found=false after genuinely trying multiple searches and at least one scrape.\n\nClassify extraction_method as exactly one of: api_endpoint, static, js, pdf, none.\n\nWhen done, respond with ONLY a JSON object, no prose and no code fences:\n{\"found\": boolean, \"primary_directory_url\": string, \"directories\": [{\"url\": string, \"region\": string, \"extraction_method\": \"api_endpoint|static|js|pdf|none\"}], \"confidence\": \"high|medium|low\", \"notes\": string}\n\nBE TOKEN-FRUGAL: rely first on the provided Google results + URL list and on URL/domain patterns. Use firecrawl_scrape SPARINGLY — at most 2 pages, only to confirm a strong candidate. You do NOT need full page content, just whether clubs are listed and how. Do not scrape large listing pages in full; a glance at the top is enough. Conclude promptly.",
+          "maxIterations": 7
         },
         "hasOutputParser": true
       },
@@ -182,7 +186,10 @@
       "position": [
         540,
         0
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 8000
     },
     {
       "parameters": {
@@ -252,27 +259,27 @@
     },
     {
       "parameters": {
-        "toolDescription": "Fetch a web page rendered as markdown (handles JavaScript). Input a full URL. Use to open a candidate page and check whether it lists volleyball clubs, or to find the real registry domain.",
+        "toolDescription": "Inspect a web page and return a COMPACT JSON assessment of whether it lists volleyball clubs (lists_clubs, club_count_estimate, sample_club_names, per_club_fields, looks_like, links_to_directories, notes). Input a full URL. Use this to confirm candidates and to follow links_to_directories deeper.",
         "method": "POST",
         "url": "https://api.firecrawl.dev/v1/scrape",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\n  \"url\": \"{url}\",\n  \"formats\": [\"markdown\"],\n  \"onlyMainContent\": true\n}",
+        "jsonBody": "{\n  \"url\": \"{url}\",\n  \"formats\": [\"json\"],\n  \"onlyMainContent\": true,\n  \"jsonOptions\": { \"prompt\": \"Assess whether this web page is a directory/list of volleyball clubs, for a scraper. Return JSON with keys: lists_clubs (boolean), club_count_estimate (number), sample_club_names (array up to 5), per_club_fields (array of fields visible per club e.g. name/city/website), looks_like (one of static_table, js_app, api, pdf, other), links_to_directories (array of URLs on the page that look like club directory/registry pages), notes (short).\" }\n}",
         "placeholderDefinitions": {
           "values": [
             {
               "name": "url",
-              "description": "the full URL to fetch",
+              "description": "the full URL to inspect",
               "type": "string"
             }
           ]
         },
         "optimizeResponse": true
       },
-      "id": "firecrawl_scrape",
-      "name": "firecrawl_scrape",
+      "id": "firecrawl_inspect",
+      "name": "firecrawl_inspect",
       "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
       "typeVersion": 1.1,
       "position": [
@@ -412,23 +419,23 @@
         ]
       ]
     },
-    "firecrawl_scrape": {
-      "ai_tool": [
-        [
-          {
-            "node": "AI Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Structured Output": {
       "ai_outputParser": [
         [
           {
             "node": "AI Agent",
             "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "firecrawl_inspect": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
             "index": 0
           }
         ]
