@@ -281,6 +281,15 @@ built SPA, so the UI and API are same-origin.
 > The local `pocketbase` binary and `pocketbase/pb_data/` are gitignored. Schema lives in
 > `pb_migrations/` (committed) and is auto-applied on `serve` — never click schema into the
 > admin UI as the source of truth.
+>
+> **Don't create schema via the live PB API either.** If you add a collection/field with the
+> REST API (e.g. for speed against prod) and *also* write the matching create-migration, the
+> migration re-runs on the next deploy against a DB that already has the object and **fails
+> ("name must be unique") — crash-looping the container (503)**. Either apply schema *only*
+> via migrations, or make every migration **idempotent** (skip if the collection/field already
+> exists: `try { app.findCollectionByNameOrId(name); return } catch(e){}` for collections,
+> `if (c.fields.getByName(f)) return` for fields). All migrations here are idempotent for this
+> reason.
 
 ## Deployment (production — Coolify)
 
