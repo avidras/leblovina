@@ -2,6 +2,8 @@
 
 Project context and conventions for Claude Code. Read this fully before making changes.
 
+> **Resuming work?** Read `specs/STATUS.md` first — live state, resource IDs, and open items.
+
 ## Always-on rules
 
 - **Never commit or push** unless the user explicitly asks you to. Do not create commits,
