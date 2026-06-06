@@ -111,7 +111,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ url: $('pick url').item.json.url, formats: ['markdown'], onlyMainContent: false, timeout: 100000 }) }}",
+        "jsonBody": "={{ JSON.stringify({ url: $('pick url').item.json.url, formats: ['markdown'], onlyMainContent: false, waitFor: 3000, timeout: 100000 }) }}",
         "options": {
           "timeout": 120000
         }
