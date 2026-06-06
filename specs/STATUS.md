@@ -4,9 +4,13 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 (conventions + how to drive the n8n/PocketBase APIs from `.env`) then this file.
 
 > **The end-to-end plan now lives in `specs/implementation-roadmap.md`** (canonical, phased).
-> This file remains the live state + resource IDs. Recent: discovery no longer blanks
-> `directory_urls`; Firecrawl `waitFor` added; detail-page contact harvester workflow
-> (`extract-club-contacts`) created. Next per the roadmap: Phase 1.1 — Serper Resolve relevance.
+> This file remains the live state + resource IDs. **Done:** Phase 0 (commit), Phase 1 (Resolve
+> LLM relevance + two modes), Phase 2.1 (deterministic `club_count`), 2.1b (name-only dedup +
+> 107-dupe cleanup, re-runs now idempotent), 2.3 (Contacts UI + `source_type` tag). **Next:**
+> Phase 2.2 — make the detail-page contact harvest batched/async and auto-run inside
+> `process-federation` (the 139-club sync run hit n8n's execution timeout; needs bounded
+> batches + a driver). Then Phase 3 (Europe-wide run + count QA), 4 (Apify/platform), 5 (site scraper).
+> New workflow id: extract-club-contacts `wbiJdurHtKbbQtye`.
 
 _Last updated: 2026-06-06._
 
