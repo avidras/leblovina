@@ -1,0 +1,250 @@
+{
+  "name": "Leblovina — Site-scrape club contacts",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "site-scrape-club",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        0
+      ],
+      "webhookId": "site-scrape-club"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p",
+              "name": "pbUrl",
+              "value": "https://leblovina.tools.biceps.digital",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -280,
+        0
+      ],
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "hzdBwrAqrPZjDmME",
+          "name": "PocketBase admin (api)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/clubs/records/{{ $('Webhook').item.json.body.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('PB Auth').item.json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "getc",
+      "name": "Get club",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const club = $('Get club').first().json;\nconst home = (club.website_url||'').trim();\nconst hostOf=(u)=>String(u||'').replace(/^https?:\\/\\//i,'').replace(/^www\\./i,'').split(/[\\/?#]/)[0].toLowerCase();\nconst domain = hostOf(home);\nconst UA={'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36'};\nconst grab=async(u)=>{ try{ const r=await this.helpers.httpRequest({method:'GET',url:u,headers:UA,timeout:9000,returnFullResponse:true,ignoreHttpStatusErrors:true,followRedirect:true}); return String(r.body||''); }catch(e){ return ''; } };\nif(!home){ return [{json:{__skip:true,clubId:club.id}}]; }\nconst homeHtml = await grab(home);\nconst KW=/(contact|kontakt|kontakti|contatti|contacto|impressum|imprint|o-?nas|about|team|tym|vedeni|coaches|verein|squadra|equipe|contattaci|contacts)/i;\nconst re=/href\\s*=\\s*[\"']([^\"'#]+)[\"']/gi; let m; const links=[];\nwhile((m=re.exec(homeHtml))){ let h=m[1]; if(!h||/^(mailto:|tel:|javascript:|data:)/i.test(h)) continue; if(!KW.test(h)) continue;\n  let abs; if(/^https?:\\/\\//i.test(h)) abs=h; else if(h.startsWith('//')) abs='https:'+h; else if(h.startsWith('/')) abs='https://'+domain+h; else abs='https://'+domain+'/'+h.replace(/^\\.?\\//,'');\n  if(hostOf(abs)===domain && links.indexOf(abs)<0) links.push(abs); }\nconst cands=links.slice(0,2);\nlet combined='CLUB DOMAIN: '+domain+'\\nURL: '+home+'\\n'+homeHtml.slice(0,40000);\nfor(const c of cands){ const t=await grab(c); if(t) combined+='\\n\\n--- '+c+' ---\\n'+t.slice(0,30000); }\nreturn [{json:{clubId:club.id, name:club.name||'', domain, home, candidates:cands, combined}}];\n"
+      },
+      "id": "crawl",
+      "name": "Crawl",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        60,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.combined ? $json.combined : 'No content.' }}",
+        "options": {
+          "systemMessage": "You are given the HTML of a volleyball club's OWN website (homepage plus a contact/about page). Extract the club's legitimate contact details. Return ONLY JSON - no prose, no code fences - {\"contacts\":[{\"email\":string,\"name\":string,\"position\":string,\"phone\":string}]}. email is REQUIRED per contact (omit any contact without an email); name/position/phone optional. Capture only emails LITERALLY present in the page text or mailto: links. NEVER invent, complete or guess an email. EXCLUDE: the website designer/agency, hosting/CMS/platform addresses (wordpress@, sentry@, no-reply@, postmaster@, and info@/support@ of a hosting or template provider), social-media, cookie/privacy boilerplate, and any email whose domain is clearly an unrelated third party. PREFER emails on the club's own domain (CLUB DOMAIN is given at the top) or a personal address tied to a named club person (coach/president/secretary). Associate a name/position/phone with each email when shown nearby. If no legitimate club email is present, return {\"contacts\":[]}."
+        }
+      },
+      "id": "extract",
+      "name": "Extract contacts",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        240,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 4000
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {}
+      },
+      "id": "gmodel",
+      "name": "Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        240,
+        200
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "bk0TwlDz0lEZUfic",
+          "name": "Gemini (leblovina)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst c = $('Crawl').first().json;\nif (c.__skip) return [{json:{ok:false,note:'no website'}}];\nconst clubId=c.clubId, src=c.home;\nconst isEmail=(e)=>/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(e);\nconst findContact=async(e)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs:{filter:\"(email='\"+e.replace(/'/g,'')+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nconst parse=(raw0)=>{let raw=String(raw0||'').trim().replace(/^```(json)?/i,'').replace(/```\\s*$/,'').trim();try{const p=JSON.parse(raw);if(p&&Array.isArray(p.contacts))return p.contacts;}catch(e){}const out=[];const st=[];for(let i=0;i<raw.length;i++){const ch=raw[i];if(ch==='{')st.push(i);else if(ch==='}'){const s=st.pop();if(s!=null){try{const o=JSON.parse(raw.slice(s,i+1));if(o&&typeof o==='object'&&('email' in o))out.push(o);}catch(_){}}}}return out;};\nconst cts=parse(($('Extract contacts').first().json||{}).output);\nlet created=0,patched=0;\nfor(const ct of cts){ const email=String((ct&&ct.email)||'').trim().toLowerCase(); if(!email||!isEmail(email)) continue;\n  const nm=String((ct&&ct.name)||'').trim(),pos=String((ct&&ct.position)||'').trim(),ph=String((ct&&ct.phone)||'').trim();\n  try{ await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/contacts/records',headers:pbH,body:{club:clubId,email,name:nm,position:pos,phone:ph,source_url:src,source_type:'club_site',verification_status:'unverified'},json:true}); created++; }\n  catch(e){ try{ const ex=await findContact(email); if(ex){ const p={}; if(!ex.club)p.club=clubId; if(nm&&!ex.name)p.name=nm; if(pos&&!ex.position)p.position=pos; if(ph&&!ex.phone)p.phone=ph; if(!ex.source_type)p.source_type='club_site'; if(!ex.source_url)p.source_url=src; if(Object.keys(p).length) await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/contacts/records/'+ex.id,headers:pbH,body:p,json:true}); patched++; } }catch(_){} }\n}\nconst now=new Date().toISOString();\ntry{ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/clubs/records/'+clubId,headers:pbH,body:{status:(created+patched>0?'contacts_found':'no_contacts'),last_scraped:now},json:true}); }catch(_){}\nreturn [{json:{ok:true,clubId,domain:c.domain,contactsCreated:created,contactsPatched:patched}}];\n"
+      },
+      "id": "write",
+      "name": "Write",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "PB Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PB Auth": {
+      "main": [
+        [
+          {
+            "node": "Get club",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get club": {
+      "main": [
+        [
+          {
+            "node": "Crawl",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crawl": {
+      "main": [
+        [
+          {
+            "node": "Extract contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract contacts": {
+      "main": [
+        [
+          {
+            "node": "Write",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extract contacts",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "templateId": "leblovina-site-scrape-club"
+  }
+}
