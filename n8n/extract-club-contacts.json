@@ -1,0 +1,287 @@
+{
+  "name": "Leblovina — Extract club contacts (detail pages)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "extract-club-contacts",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        0
+      ],
+      "webhookId": "extract-club-contacts"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p",
+              "name": "pbUrl",
+              "value": "https://leblovina.tools.biceps.digital",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -280,
+        0
+      ],
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "hzdBwrAqrPZjDmME",
+          "name": "PocketBase admin (api)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst body=($('Webhook').first().json.body)||{};\nconst fedId=body.id; const limit=body.limit?Number(body.limit):0;\nlet items=[]; let page=1;\nwhile(true){ const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:'federation=\"'+fedId+'\" && detail_url!=\"\"',perPage:200,page,fields:'id,name,detail_url'},headers:pbH,json:true}); items=items.concat(r.items||[]); if(page>=(r.totalPages||1))break; page++; }\nif(limit>0) items=items.slice(0,limit);\nif(!items.length) return [{json:{__skip:true,note:'no clubs with detail_url'}}];\nreturn items.map(c=>({json:{clubId:c.id,name:c.name,detailUrl:c.detail_url}}));\n"
+      },
+      "id": "list",
+      "name": "List clubs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.detailUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "outputPropertyName": "data"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "fetch",
+      "name": "Fetch detail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        60,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.data ? String($json.data).slice(0,60000) : 'No content.' }}",
+        "options": {
+          "systemMessage": "You are given the HTML of a single volleyball CLUB's profile/detail page from a federation directory. Extract the contact details that belong to THIS club - typically a president/secretary/contact person and/or the club's own email and phone. Return ONLY JSON - no prose, no code fences - {\"contacts\":[{\"email\":string,\"name\":string,\"position\":string,\"phone\":string}]}. email is REQUIRED for each contact (omit any contact without an email). name/position/phone optional (\"\" if absent). Do NOT include the federation's site-wide/footer/header contact (e.g. a generic office@/info@ address of the federation that appears site-wide), navigation, cookie notices or social links. NEVER invent, complete or guess an email. If no club email is present, return {\"contacts\":[]}."
+        }
+      },
+      "id": "extract",
+      "name": "Extract contact",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-haiku-4-5"
+        },
+        "options": {
+          "maxTokensToSample": 4000
+        }
+      },
+      "id": "model",
+      "name": "Anthropic Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        240,
+        200
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "PsTv3b7j6pP2jeMt",
+          "name": "Anthropic (leblovina)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst clubs=$('List clubs').all().map(i=>i.json);\nif(clubs.length===1 && clubs[0].__skip) return [{json:{ok:false,note:clubs[0].note}}];\nconst agents=$('Extract contact').all().map(i=>i.json);\nconst isEmail=(e)=>/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(e);\nconst findContact=async(e)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs:{filter:\"(email='\"+e.replace(/'/g,'')+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nconst parse=(raw0)=>{let raw=String(raw0||'').trim().replace(/^```(json)?/i,'').replace(/```\\s*$/,'').trim();try{const p=JSON.parse(raw);if(p&&Array.isArray(p.contacts))return p.contacts;}catch(e){}const out=[];const st=[];for(let i=0;i<raw.length;i++){const ch=raw[i];if(ch==='{')st.push(i);else if(ch==='}'){const s=st.pop();if(s!=null){try{const o=JSON.parse(raw.slice(s,i+1));if(o&&typeof o==='object'&&!Array.isArray(o)&&('email' in o))out.push(o);}catch(_){}}}}return out;};\nlet created=0,patched=0,clubsWith=0;const errors=[];\nfor(let i=0;i<clubs.length;i++){const cl=clubs[i];const ag=agents[i]||{};const cts=parse(ag.output);let saved=0;\n  for(const ct of cts){const email=String((ct&&ct.email)||'').trim().toLowerCase();if(!email||!isEmail(email))continue;\n    const nm=String((ct&&ct.name)||'').trim(),pos=String((ct&&ct.position)||'').trim(),ph=String((ct&&ct.phone)||'').trim();\n    try{await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/contacts/records',headers:pbH,body:{club:cl.clubId,email,name:nm,position:pos,phone:ph,source_url:cl.detailUrl,verification_status:'unverified'},json:true});created++;saved++;}\n    catch(e){try{const ex=await findContact(email);if(ex){const p={};if(!ex.club)p.club=cl.clubId;if(nm&&!ex.name)p.name=nm;if(pos&&!ex.position)p.position=pos;if(ph&&!ex.phone)p.phone=ph;if(!ex.source_url)p.source_url=cl.detailUrl;if(Object.keys(p).length){await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/contacts/records/'+ex.id,headers:pbH,body:p,json:true});patched++;saved++;}}}catch(_){if(errors.length<8)errors.push({email});}}\n  }\n  if(saved>0){clubsWith++;try{await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/clubs/records/'+cl.clubId,headers:pbH,body:{status:'contacts_found'},json:true});}catch(_){}}\n}\nreturn [{json:{ok:true,clubs:clubs.length,contactsCreated:created,contactsPatched:patched,clubsWithContacts:clubsWith,errors}}];\n"
+      },
+      "id": "write",
+      "name": "Write contacts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "resp",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        620,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "PB Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PB Auth": {
+      "main": [
+        [
+          {
+            "node": "List clubs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List clubs": {
+      "main": [
+        [
+          {
+            "node": "Fetch detail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch detail": {
+      "main": [
+        [
+          {
+            "node": "Extract contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract contact": {
+      "main": [
+        [
+          {
+            "node": "Write contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write contacts": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extract contact",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "templateId": "leblovina-extract-contacts"
+  }
+}
