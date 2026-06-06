@@ -72,6 +72,7 @@ export interface Club {
   status: ClubStatus | ''
   last_scraped: string
   notes: string
+  scrape_note: string
   created: string
   updated: string
 }

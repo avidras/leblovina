@@ -130,6 +130,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
               <TH>Detail</TH>
               <TH className="text-right">Contacts</TH>
               <TH sortable sorted={sortedOf('status')} onClick={() => toggleSort('status')}>Status</TH>
+              <TH>Last scrape</TH>
             </TR>
           </THead>
           <TBody>
@@ -164,6 +165,9 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
                   ) : <span className="text-neutral-400">0</span>}
                 </TD>
                 <TD>{c.status ? <Badge tone={statusTone(c.status)}>{c.status}</Badge> : '—'}</TD>
+                <TD className="max-w-[220px] truncate text-xs text-neutral-500" title={c.scrape_note || ''}>
+                  {c.scrape_note || '—'}
+                </TD>
               </TR>
             ))}
           </TBody>

@@ -92,7 +92,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const club = $('Get club').first().json;\nconst home = (club.website_url||'').trim();\nconst hostOf=(u)=>String(u||'').replace(/^https?:\\/\\//i,'').replace(/^www\\./i,'').split(/[\\/?#]/)[0].toLowerCase();\nconst domain = hostOf(home);\nconst UA={'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36'};\nconst grab=async(u)=>{ try{ const r=await this.helpers.httpRequest({method:'GET',url:u,headers:UA,timeout:9000,returnFullResponse:true,ignoreHttpStatusErrors:true,followRedirect:true}); return String(r.body||''); }catch(e){ return ''; } };\nif(!home){ return [{json:{__skip:true,clubId:club.id}}]; }\nconst homeHtml = await grab(home);\nconst KW=/(contact|kontakt|kontakti|contatti|contacto|impressum|imprint|o-?nas|about|team|tym|vedeni|coaches|verein|squadra|equipe|contattaci|contacts)/i;\nconst re=/href\\s*=\\s*[\"']([^\"'#]+)[\"']/gi; let m; const links=[];\nwhile((m=re.exec(homeHtml))){ let h=m[1]; if(!h||/^(mailto:|tel:|javascript:|data:)/i.test(h)) continue; if(!KW.test(h)) continue;\n  let abs; if(/^https?:\\/\\//i.test(h)) abs=h; else if(h.startsWith('//')) abs='https:'+h; else if(h.startsWith('/')) abs='https://'+domain+h; else abs='https://'+domain+'/'+h.replace(/^\\.?\\//,'');\n  if(hostOf(abs)===domain && links.indexOf(abs)<0) links.push(abs); }\nconst cands=links.slice(0,2);\nlet combined='CLUB DOMAIN: '+domain+'\\nURL: '+home+'\\n'+homeHtml.slice(0,40000);\nfor(const c of cands){ const t=await grab(c); if(t) combined+='\\n\\n--- '+c+' ---\\n'+t.slice(0,30000); }\nreturn [{json:{clubId:club.id, name:club.name||'', domain, home, candidates:cands, combined}}];\n"
+        "jsCode": "const club = $('Get club').first().json;\nconst home = (club.website_url||'').trim();\nconst hostOf=(u)=>String(u||'').replace(/^https?:\\/\\//i,'').replace(/^www\\./i,'').split(/[\\/?#]/)[0].toLowerCase();\nconst domain = hostOf(home);\nconst UA={'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36'};\nconst grab=async(u)=>{ try{ const r=await this.helpers.httpRequest({method:'GET',url:u,headers:UA,timeout:9000,returnFullResponse:true,ignoreHttpStatusErrors:true,followRedirect:true}); return String(r.body||''); }catch(e){ return ''; } };\nconst clean=(h)=>String(h||'')\n  .replace(/<script[\\s\\S]*?<\\/script>/gi,' ').replace(/<style[\\s\\S]*?<\\/style>/gi,' ')\n  .replace(/<a\\b[^>]*href=[\"']mailto:([^\"']+)[\"'][^>]*>([\\s\\S]*?)<\\/a>/gi,' $2 <$1> ')\n  .replace(/<\\/(div|li|tr|p|h[1-6]|td|section|article|header|footer)>/gi,'\\n').replace(/<br\\s*\\/?>/gi,'\\n')\n  .replace(/<[^>]+>/g,' ').replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&')\n  .replace(/[ \\t]+/g,' ').replace(/\\n[ \\t]*(\\n[ \\t]*)+/g,'\\n').trim();\nif(!home){ return [{json:{__skip:true,clubId:club.id}}]; }\nconst fc = $('Firecrawl home').first().json;\nconst md = (fc && fc.data && fc.data.markdown) || '';   // rendered (JS-capable)\nconst KW=/(contact|kontakt|kontakti|contatti|contacto|impressum|imprint|o-?nas|about|chi-siamo|sobre|team|tym|tiim|meeskond|squadra|equipe|equipo|staff|people|members|liikmed|coaches|treener|trener|trenari|treneri|juhatus|vorstand|zarzad|verein|mannschaft|vedeni)/i;\nconst re=/\\[([^\\]]*)\\]\\(([^)\\s]+)\\)/g; let m; const links=[];\nwhile((m=re.exec(md))){ let txt=m[1]||'', h=m[2]||''; if(/^(mailto:|tel:)/i.test(h)) continue; if(!KW.test(h)&&!KW.test(txt)) continue;\n  let abs; if(/^https?:\\/\\//i.test(h)) abs=h; else if(h.startsWith('/')) abs='https://'+domain+h.split('#')[0]; else continue;\n  if(hostOf(abs)===domain && links.indexOf(abs)<0) links.push(abs); }\nconst cands=links.slice(0,2);\nlet combined='CLUB DOMAIN: '+domain+'\\nURL: '+home+'\\n'+md.slice(0,40000);\nfor(const c of cands){ const t=await grab(c); if(t) combined+='\\n\\n=== '+c+' ===\\n'+clean(t).slice(0,15000); }\nreturn [{json:{clubId:club.id, name:club.name||'', domain, home, candidates:cands, combined, fetched: md.length>0}}];\n"
       },
       "id": "crawl",
       "name": "Crawl",
@@ -108,7 +108,7 @@
         "promptType": "define",
         "text": "={{ $json.combined ? $json.combined : 'No content.' }}",
         "options": {
-          "systemMessage": "You are given the HTML of a volleyball club's OWN website (homepage plus a contact/about page). Extract the club's legitimate contact details. Return ONLY JSON - no prose, no code fences - {\"contacts\":[{\"email\":string,\"name\":string,\"position\":string,\"phone\":string}]}. email is REQUIRED per contact (omit any contact without an email); name/position/phone optional. Capture only emails LITERALLY present in the page text or mailto: links. NEVER invent, complete or guess an email. EXCLUDE: the website designer/agency, hosting/CMS/platform addresses (wordpress@, sentry@, no-reply@, postmaster@, and info@/support@ of a hosting or template provider), social-media, cookie/privacy boilerplate, and any email whose domain is clearly an unrelated third party. PREFER emails on the club's own domain (CLUB DOMAIN is given at the top) or a personal address tied to a named club person (coach/president/secretary). Associate a name/position/phone with each email when shown nearby. If no legitimate club email is present, return {\"contacts\":[]}."
+          "systemMessage": "You are given the cleaned text of a volleyball club's OWN website (homepage + contact/about/team pages). mailto links appear inline as 'Name <email>'. Extract the club's contacts. Return ONLY JSON - no prose, no code fences - {\"contacts\":[{\"email\":string,\"name\":string,\"position\":string,\"phone\":string}]}. email is REQUIRED per contact (omit any contact without an email; capture only emails literally present, including the <email> shown inline from mailto links; NEVER invent, complete or guess an email). For EACH email, look at the surrounding line/row/card for: NAME = the person's full name if shown; POSITION = their role in ANY language (e.g. President/Predsjednik/Předseda/Esimees, Secretary/Sekretär/Sekretär, Coach/Trener/Treener/Trainer, Board member/Vorstand/Juhatus). name and position are OPTIONAL - include them whenever they appear near the email; use \"\" if absent. phone = a phone shown near the email, else \"\". EXCLUDE: the website designer/agency, hosting/CMS/platform addresses (wordpress@, sentry@, no-reply@, postmaster@, hosting info@/support@), social media, cookie/privacy boilerplate, and unrelated third-party domains. PREFER emails on the club's own domain (CLUB DOMAIN given) or a personal address tied to a named person. If no legitimate club email is present, return {\"contacts\":[]}."
         }
       },
       "id": "extract",
@@ -148,7 +148,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst c = $('Crawl').first().json;\nif (c.__skip) return [{json:{ok:false,note:'no website'}}];\nconst clubId=c.clubId, src=c.home;\nconst isEmail=(e)=>/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(e);\nconst findContact=async(e)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs:{filter:\"(email='\"+e.replace(/'/g,'')+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nconst parse=(raw0)=>{let raw=String(raw0||'').trim().replace(/^```(json)?/i,'').replace(/```\\s*$/,'').trim();try{const p=JSON.parse(raw);if(p&&Array.isArray(p.contacts))return p.contacts;}catch(e){}const out=[];const st=[];for(let i=0;i<raw.length;i++){const ch=raw[i];if(ch==='{')st.push(i);else if(ch==='}'){const s=st.pop();if(s!=null){try{const o=JSON.parse(raw.slice(s,i+1));if(o&&typeof o==='object'&&('email' in o))out.push(o);}catch(_){}}}}return out;};\nconst cts=parse(($('Extract contacts').first().json||{}).output);\nlet created=0,patched=0;\nfor(const ct of cts){ const email=String((ct&&ct.email)||'').trim().toLowerCase(); if(!email||!isEmail(email)) continue;\n  const nm=String((ct&&ct.name)||'').trim(),pos=String((ct&&ct.position)||'').trim(),ph=String((ct&&ct.phone)||'').trim();\n  try{ await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/contacts/records',headers:pbH,body:{club:clubId,email,name:nm,position:pos,phone:ph,source_url:src,source_type:'club_site',verification_status:'unverified'},json:true}); created++; }\n  catch(e){ try{ const ex=await findContact(email); if(ex){ const p={}; if(!ex.club)p.club=clubId; if(nm&&!ex.name)p.name=nm; if(pos&&!ex.position)p.position=pos; if(ph&&!ex.phone)p.phone=ph; if(!ex.source_type)p.source_type='club_site'; if(!ex.source_url)p.source_url=src; if(Object.keys(p).length) await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/contacts/records/'+ex.id,headers:pbH,body:p,json:true}); patched++; } }catch(_){} }\n}\nconst now=new Date().toISOString();\ntry{ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/clubs/records/'+clubId,headers:pbH,body:{status:(created+patched>0?'contacts_found':'no_contacts'),last_scraped:now},json:true}); }catch(_){}\nreturn [{json:{ok:true,clubId,domain:c.domain,contactsCreated:created,contactsPatched:patched}}];\n"
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst c = $('Crawl').first().json;\nif (c.__skip) return [{json:{ok:false,note:'no website'}}];\nconst clubId=c.clubId, src=c.home;\nconst isEmail=(e)=>/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(e);\nconst findContact=async(e)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs:{filter:\"(email='\"+e.replace(/'/g,'')+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nconst parse=(raw0)=>{let raw=String(raw0||'').trim().replace(/^```(json)?/i,'').replace(/```\\s*$/,'').trim();try{const p=JSON.parse(raw);if(p&&Array.isArray(p.contacts))return p.contacts;}catch(e){}const out=[];const st=[];for(let i=0;i<raw.length;i++){const ch=raw[i];if(ch==='{')st.push(i);else if(ch==='}'){const s=st.pop();if(s!=null){try{const o=JSON.parse(raw.slice(s,i+1));if(o&&typeof o==='object'&&('email' in o))out.push(o);}catch(_){}}}}return out;};\nconst cts=parse(($('Extract contacts').first().json||{}).output);\nlet created=0,patched=0;\nfor(const ct of cts){ const email=String((ct&&ct.email)||'').trim().toLowerCase(); if(!email||!isEmail(email)) continue;\n  const nm=String((ct&&ct.name)||'').trim(),pos=String((ct&&ct.position)||'').trim(),ph=String((ct&&ct.phone)||'').trim();\n  try{ await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/contacts/records',headers:pbH,body:{club:clubId,email,name:nm,position:pos,phone:ph,source_url:src,source_type:'club_site',verification_status:'unverified'},json:true}); created++; }\n  catch(e){ try{ const ex=await findContact(email); if(ex){ const p={}; if(!ex.club)p.club=clubId; if(nm&&!ex.name)p.name=nm; if(pos&&!ex.position)p.position=pos; if(ph&&!ex.phone)p.phone=ph; if(!ex.source_type)p.source_type='club_site'; if(!ex.source_url)p.source_url=src; if(Object.keys(p).length) await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/contacts/records/'+ex.id,headers:pbH,body:p,json:true}); patched++; } }catch(_){} }\n}\nconst got=created+patched;\nlet note, status;\nif(got>0){ note='site-scrape: '+got+' contact(s) from '+c.domain; status='contacts_found'; }\nelse if(!c.fetched){ note='site-scrape: fetch failed (anti-bot/blocked) — needs Apify'; status='error'; }\nelse { note='site-scrape: 0 contacts (no email on site / parked)'; status='no_contacts'; }\nconst now=new Date().toISOString();\ntry{ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/clubs/records/'+clubId,headers:pbH,body:{status,last_scraped:now,scrape_note:note},json:true}); }catch(_){}\nreturn [{json:{ok:true,clubId,domain:c.domain,contactsCreated:created,contactsPatched:patched,note}}];\n"
       },
       "id": "write",
       "name": "Write",
@@ -158,6 +158,35 @@
         440,
         0
       ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.firecrawl.dev/v1/scrape",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $('Get club').item.json.website_url, formats:['markdown'], onlyMainContent:false, waitFor:3500, timeout:90000 }) }}",
+        "options": {
+          "timeout": 110000
+        }
+      },
+      "id": "fchome",
+      "name": "Firecrawl home",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -120,
+        160
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ZxHAcWu5UlNAMy8X",
+          "name": "Firecrawl (leblovina)"
+        }
+      }
     }
   ],
   "connections": {
@@ -198,7 +227,7 @@
       "main": [
         [
           {
-            "node": "Crawl",
+            "node": "Firecrawl home",
             "type": "main",
             "index": 0
           }
@@ -237,14 +266,25 @@
           }
         ]
       ]
+    },
+    "Firecrawl home": {
+      "main": [
+        [
+          {
+            "node": "Crawl",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
   },
   "active": false,
   "pinData": {},
-  "meta": {
-    "templateId": "leblovina-site-scrape-club"
-  }
+  "meta": null
 }
