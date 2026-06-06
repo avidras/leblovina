@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { pb, CONFEDERATIONS, FEDERATION_STATUSES, type Federation, type GateOverride } from '@/lib/pb'
 import { useCollection } from '@/hooks/useCollection'
+import { useUrlState } from '@/hooks/useUrlState'
 import { useClubCountsByFederation } from '@/hooks/useClubCounts'
 import { triggerDiscoverClubs, triggerBatchProcess, triggerExtractFederation, type TriggerResult } from '@/lib/n8n'
 import { Button } from '@/components/ui/button'
@@ -19,9 +20,9 @@ const statusRank = (s: string) => (s in STATUS_RANK ? STATUS_RANK[s] : 99)
 export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string) => void }) {
   const { items, loading, error } = useCollection<Federation>('federations', 'name')
   const clubCounts = useClubCountsByFederation()
-  const [conf, setConf] = useState('')
-  const [status, setStatus] = useState('')
-  const [q, setQ] = useState('')
+  const [conf, setConf] = useUrlState('conf')
+  const [status, setStatus] = useUrlState('status')
+  const [q, setQ] = useUrlState('q')
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'status', dir: 'asc' })
   const [openId, setOpenId] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)

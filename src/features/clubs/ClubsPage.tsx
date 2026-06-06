@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { type Club, WEBSITE_STATUSES } from '@/lib/pb'
 import { useCollection } from '@/hooks/useCollection'
+import { useUrlState, clearUrlParam } from '@/hooks/useUrlState'
 import { useContactCountsByClub } from '@/hooks/useContactCounts'
 import { triggerBatchEnrich } from '@/lib/n8n'
 import { Button } from '@/components/ui/button'
@@ -15,10 +16,10 @@ type SortKey = 'name' | 'country' | 'region' | 'city' | 'status'
 export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?: string | null; onOpenContacts?: (clubId: string) => void } = {}) {
   const { items, loading, error } = useCollection<Club>('clubs', 'name')
   const contactCounts = useContactCountsByClub()
-  const [q, setQ] = useState('')
+  const [q, setQ] = useUrlState('q')
   const [country, setCountry] = useState(initialCountry ?? '')
-  const [hasSite, setHasSite] = useState('')
-  const [wsFilter, setWsFilter] = useState('')
+  const [hasSite, setHasSite] = useUrlState('hasSite')
+  const [wsFilter, setWsFilter] = useUrlState('ws')
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'name', dir: 'asc' })
   const [enrichBusy, setEnrichBusy] = useState(false)
   const [enrichMsg, setEnrichMsg] = useState<string | null>(null)
@@ -75,7 +76,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
         {country && (
           <button
             className="inline-flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm text-neutral-700 hover:bg-neutral-50"
-            onClick={() => setCountry('')}
+            onClick={() => { setCountry(''); clearUrlParam('country') }}
             title="Clear country filter"
           >
             Country: <span className="font-medium">{country}</span>

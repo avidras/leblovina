@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { type Contact, VERIFICATION_STATUSES, CONTACT_SOURCE_TYPES } from '@/lib/pb'
 import { useCollection } from '@/hooks/useCollection'
+import { useUrlState, clearUrlParam } from '@/hooks/useUrlState'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
@@ -10,10 +11,10 @@ type SortKey = 'club' | 'country' | 'email' | 'position'
 
 export function ContactsPage({ initialClub }: { initialClub?: string | null } = {}) {
   const { items, loading, error } = useCollection<Contact>('contacts', '-created', 'club')
-  const [q, setQ] = useState('')
+  const [q, setQ] = useUrlState('q')
   const [club, setClub] = useState(initialClub ?? '')
-  const [vsFilter, setVsFilter] = useState('')
-  const [srcFilter, setSrcFilter] = useState('')
+  const [vsFilter, setVsFilter] = useUrlState('vs')
+  const [srcFilter, setSrcFilter] = useUrlState('src')
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'club', dir: 'asc' })
 
   const clubName = (c: Contact) => c.expand?.club?.name ?? ''
@@ -58,7 +59,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
         {club && (
           <button
             className="inline-flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm text-neutral-700 hover:bg-neutral-50"
-            onClick={() => setClub('')}
+            onClick={() => { setClub(''); clearUrlParam('club') }}
             title="Clear club filter"
           >
             Club: <span className="font-medium">{activeClubName}</span>
