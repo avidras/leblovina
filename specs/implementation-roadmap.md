@@ -119,7 +119,12 @@ Each step lists **Goal · Work · Done when**. `[P0/P1/P2]` = priority within th
   league/team pages (Albania), JS-app directories (Flemish `volleyvlaanderen`), etc.
   - *Done when:* the previously-deferred archetypes extract, or are honestly out of reach.
 
-### Phase 5 — Club-site contact scraper  *(the headline Phase-3 deliverable)*
+### Phase 5 — Club-site contact scraper  *(the headline Phase-3 deliverable)* — 🟡 v1 BUILT
+> `site-scrape-club` worker (crawl homepage + ≤2 multilingual contact/about pages → Gemini
+> extract + de-noise → write `source_type=club_site`, per-club, idempotent) + `site-scrape-driver`
+> (live-website clubs, throttled batches of 5). Verified: beach44.ee → 4 real club-domain
+> contacts. **Gap:** JS-rendered sites (lionhearts.bg, ankkuritpesis.fi) return 0 — need the
+> Firecrawl-render / Apify escalation (Phase 4) wired into the worker's crawl step.
 The product is contacts; most clubs' contacts live only on **their own websites**. Gated by
 **1.1** (correct URLs) and built on **2.2** (URL→contacts primitive).
 - **5.1 Page-discovery / crawl layer `[P1]`.** For each club with a live, correctly-resolved
