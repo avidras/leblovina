@@ -5,7 +5,7 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "extract-clubs-html",
-        "responseMode": "responseNode",
+        "responseMode": "onReceived",
         "options": {}
       },
       "id": "wh",
@@ -149,21 +149,6 @@
     },
     {
       "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json }}",
-        "options": {}
-      },
-      "id": "resp",
-      "name": "Respond",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        560,
-        0
-      ]
-    },
-    {
-      "parameters": {
         "model": {
           "__rl": true,
           "mode": "list",
@@ -301,13 +286,7 @@
     },
     "Apply & upsert": {
       "main": [
-        [
-          {
-            "node": "Respond",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Anthropic Chat Model": {

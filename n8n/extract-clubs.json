@@ -5,7 +5,7 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "extract-clubs",
-        "responseMode": "responseNode",
+        "responseMode": "onReceived",
         "options": {}
       },
       "id": "wh",
@@ -164,21 +164,6 @@
         520,
         0
       ]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json }}",
-        "options": {}
-      },
-      "id": "resp",
-      "name": "Respond",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        700,
-        0
-      ]
     }
   ],
   "connections": {
@@ -261,13 +246,7 @@
     },
     "Apply & upsert": {
       "main": [
-        [
-          {
-            "node": "Respond",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     }
   },
