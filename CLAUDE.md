@@ -177,11 +177,16 @@ Unique index on `dedup_key` (websites are too sparse to dedup on). Non-unique in
 `extraction_gate` (`review_all | auto_safe | auto_all`, seeded `auto_safe`). The discovery
 gate is driven from here, not hardcoded in n8n. See `specs/club-discovery.md`.
 
-### `contacts` — Phase 3
-| club (relation), email, name, role, source_url, verification_status, verified_at,
-  quality |
+### `contacts` — Phase 3 (collection now exists; seeded early during extraction)
+| club (relation), email (**required**), name, position, phone, source_url,
+  verification_status, verified_at, quality |
 - Unique index on `email`.
 - `source_url` lives **here**, per email — one club can yield emails from several pages.
+- **Seeded during Phase-2 extraction** when a directory already exposes contacts (list/PDF/
+  detail page — e.g. Portugal, Estonia, Czechia, Bulgaria); stored `unverified`. Phase 3's
+  verifier fills `verification_status`/`verified_at`/`quality`. See
+  `specs/club-contacts-from-directory.md`. `email` is the only required field; `position`
+  (role/title) and `phone` are optional. Never invent an email (domain rule #1).
 
 Enums:
 - `verification_status`: `unverified | mx_only | verified | catch_all | undeliverable | unknown`
