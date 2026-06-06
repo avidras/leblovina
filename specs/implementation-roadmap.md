@@ -77,7 +77,15 @@ Each step lists **Goal · Work · Done when**. `[P0/P1/P2]` = priority within th
   duplicates on re-run (country-as-city etc.). Cleaned 107 existing dupes across 10 federations
   (contacts moved to survivors; 1,777 survivors re-keyed). Re-runs verified idempotent — this
   unblocks the Phase-3 mass re-run. See `specs/club-dedup-stability.md` (amendment).
-- **2.2 "URL → contacts" primitive, batched & integrated `[P1]`.** Unify inline + detail-page
+- **2.2 "URL → contacts" primitive, batched & integrated `[P1]`. ✅ DONE.** Detail-page
+  harvester (`extract-club-contacts`) is now **async** (onReceived), runs on **Gemini 2.5 Flash**
+  (the Anthropic tier 429-ed on 139 back-to-back calls — Gemini has higher headroom, and the
+  `.env` now has `GEMINI_API_KEY` + an n8n `googlePalmApi` credential), agent
+  `onError:continue`+retry (a rate-limited club is skipped, never aborts), idempotent (skips
+  `contacts_found`), and **auto-fires from `process-federation`** after extraction. Residual: it
+  writes contacts at the end of the run — if n8n kills the execution before then, nothing
+  persists, but an idempotent re-run recovers (consider per-club incremental writes if Phase-3
+  scale hits this). _Original spec line:_ unify inline + detail-page
   contact extraction into **one** capability: given a URL, fetch → extract contacts
   (email/name/position/phone, domain rule #1) → upsert. Make it **batched/async** (the 139-club
   sync run timed out) and **auto-run inside `process-federation`** after list extraction
