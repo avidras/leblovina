@@ -3,6 +3,11 @@
 Update this when you finish a chunk of work. A new session should read `CLAUDE.md`
 (conventions + how to drive the n8n/PocketBase APIs from `.env`) then this file.
 
+> **The end-to-end plan now lives in `specs/implementation-roadmap.md`** (canonical, phased).
+> This file remains the live state + resource IDs. Recent: discovery no longer blanks
+> `directory_urls`; Firecrawl `waitFor` added; detail-page contact harvester workflow
+> (`extract-club-contacts`) created. Next per the roadmap: Phase 1.1 — Serper Resolve relevance.
+
 _Last updated: 2026-06-06._
 
 ## Where things stand
