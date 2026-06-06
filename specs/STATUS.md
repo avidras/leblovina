@@ -11,6 +11,19 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > `process-federation` (the 139-club sync run hit n8n's execution timeout; needs bounded
 > batches + a driver). Then Phase 3 (Europe-wide run + count QA), 4 (Apify/platform), 5 (site scraper).
 > New workflow id: extract-club-contacts `wbiJdurHtKbbQtye`.
+>
+> **Phase 3 round 1 done (2026-06-06 late):** Europe-wide run + count-QA + extractor revision.
+> Fixed: async extractors (60s code-timeout), discovery `maxIterations` 7→18 (recovered GER/ESP),
+> `js`→Firecrawl-render routing (recovered SLO/SRB/SCO), federated extractor v1 (`extract-clubs-
+> federated` MZGXbnSIKqY9O57c — DEN 0→3, NOR JS-tabs still 0), site-scrape worker+driver
+> (`site-scrape-club` bMYkYfjGXek63kox, `site-scrape-driver` Ggc7pFlFgBUVGsm2; JS-render via
+> Firecrawl; `clubs.scrape_note`), Gemini 2.5 Flash for high-volume LLM (cred `bk0TwlDz0lEZUfic`),
+> URL-synced UI filters. **CEV now 39/56 federations with clubs (~4,454); 4,790 clubs / 1,586
+> contacts total.**
+> **Remaining long tail (16 dir-but-0 + GIB):** NED(Nevobo API), ALB(DataProject), NOR(JS-tab
+> actions), CYP/MON(Apify), SUI/LAT/BIH/WAL(dirs found, extraction 0 — per-case), FRA/ISL/SVK/
+> SWE/UKR/GRL/NIR(mixed). Plus: wire federated/site-scraper into routing; fix the noisy
+> `club_count` heuristic; Apify anti-bot tier (Phase 4).
 
 _Last updated: 2026-06-06._
 
