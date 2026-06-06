@@ -1,0 +1,318 @@
+{
+  "name": "Leblovina — Extract clubs (federated)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "extract-clubs-federated",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -700,
+        0
+      ],
+      "webhookId": "extract-clubs-federated"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p",
+              "name": "pbUrl",
+              "value": "https://leblovina.tools.biceps.digital",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -540,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -380,
+        0
+      ],
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "hzdBwrAqrPZjDmME",
+          "name": "PocketBase admin (api)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/federations/records/{{ $('Webhook').item.json.body.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('PB Auth').item.json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "getfed",
+      "name": "Get Federation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const fed=$('Get Federation').first().json;\nconst dirs=Array.isArray(fed.directory_urls)?fed.directory_urls:[];\nconst ds=dirs.filter(d=>d&&['static','js'].includes(d.extraction_method)&&/^https?:\\/\\//.test(d.url||''));\nif(!ds.length) return [{json:{__skip:true}}];\nreturn ds.map((d,i)=>({json:{dirIndex:i,dirUrl:d.url,region:d.region||''}}));\n"
+      },
+      "id": "list",
+      "name": "List dirs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -60,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.firecrawl.dev/v1/scrape",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $json.dirUrl, formats:['markdown'], onlyMainContent:false, waitFor:3000, timeout:90000 }) }}",
+        "options": {
+          "timeout": 110000
+        }
+      },
+      "id": "fc",
+      "name": "Firecrawl dir",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        120,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ZxHAcWu5UlNAMy8X",
+          "name": "Firecrawl (leblovina)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const UA={'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36'};\nconst hostOf=(u)=>String(u||'').replace(/^https?:\\/\\//i,'').replace(/^www\\./i,'').split(/[\\/?#]/)[0].toLowerCase();\nconst grab=async(u)=>{ try{ const r=await this.helpers.httpRequest({method:'GET',url:u,headers:UA,timeout:9000,returnFullResponse:true,ignoreHttpStatusErrors:true,followRedirect:true}); return String(r.body||''); }catch(e){ return ''; } };\nconst clean=(h)=>String(h||'').replace(/<script[\\s\\S]*?<\\/script>/gi,' ').replace(/<style[\\s\\S]*?<\\/style>/gi,' ').replace(/<a\\b[^>]*href=[\"']mailto:([^\"']+)[\"'][^>]*>([\\s\\S]*?)<\\/a>/gi,' $2 <$1> ').replace(/<\\/(div|li|tr|p|h[1-6]|td|section)>/gi,'\\n').replace(/<br\\s*\\/?>/gi,'\\n').replace(/<[^>]+>/g,' ').replace(/&nbsp;/gi,' ').replace(/[ \\t]+/g,' ').replace(/\\n[ \\t]*(\\n[ \\t]*)+/g,'\\n').trim();\nconst it=$json;\nconst md=(($('Firecrawl dir').item.json||{}).data||{}).markdown||'';\nconst dom=hostOf(it.dirUrl);\n// follow club-list / sub-region links one level (multilingual)\nconst KW=/(klub|club|verein|clubes|clubs|societa|associazion|oddil|somatia|members|teams|odbojkaski|kredse|landesverband|regional|wojewodztw|seuras|jasenseur|liikmed)/i;\nconst re=/\\[([^\\]]*)\\]\\(([^)\\s]+)\\)/g; let m; const links=[];\nwhile((m=re.exec(md))){ let h=m[2]||''; if(/^(mailto:|tel:)/i.test(h)) continue; if(!KW.test(h)&&!KW.test(m[1]||'')) continue; let abs; if(/^https?:\\/\\//i.test(h))abs=h.split('#')[0]; else if(h.startsWith('/'))abs='https://'+dom+h.split('#')[0]; else continue; if(hostOf(abs)===dom&&abs!==it.dirUrl&&links.indexOf(abs)<0) links.push(abs); }\nlet combined='REGION: '+it.region+'\\nURL: '+it.dirUrl+'\\n'+md.slice(0,30000);\nfor(const u of links.slice(0,3)){ const t=await grab(u); if(t) combined+='\\n\\n=== '+u+' ===\\n'+clean(t).slice(0,15000); }\nreturn {json:{dirIndex:it.dirIndex,dirUrl:it.dirUrl,region:it.region,combined,hadContent:md.length>50}};\n"
+      },
+      "id": "expand",
+      "name": "Expand",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.combined ? $json.combined : 'No content.' }}",
+        "options": {
+          "systemMessage": "You extract volleyball clubs from a regional volleyball association's page (given as Markdown/text, possibly with sub-pages appended). Return ONLY JSON - no prose/fences - {\"clubs\":[{\"name\":string,\"city\":string,\"region\":string,\"website\":string,\"contacts\":[{\"email\":string,\"name\":string,\"position\":string,\"phone\":string}]}]}. Include EVERY real club/society; ignore navigation, headers, pagination, the association itself and social links. name required (skip nameless). city/region/website optional (\"\" if absent; website = the club's OWN site, never the association's). contacts = only rows with a real email literally present (email required per contact; never invent). If no clubs, return {\"clubs\":[]}."
+        }
+      },
+      "id": "extract",
+      "name": "Extract clubs",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        480,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 4000
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {
+          "maxOutputTokens": 32000
+        }
+      },
+      "id": "gmodel",
+      "name": "Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        480,
+        200
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "bk0TwlDz0lEZUfic",
+          "name": "Gemini (leblovina)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst fed=$('Get Federation').first().json; const fedId=fed.id;\nconst lst=$('List dirs').all().map(i=>i.json);\nif(lst.length===1&&lst[0].__skip){ try{await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/federations/records/'+fedId,headers:pbH,body:{status:'needs_review',notes:'no static/js directories for federated extract'},json:true});}catch(_){} return [{json:{ok:false}}]; }\nconst exp=$('Expand').all().map(i=>i.json);\nconst ags=$('Extract clubs').all().map(i=>i.json);\nconst fivb=String(fed.fivb_code||'').toUpperCase(); const country=fed.country||'';\nconst uslug=(s)=>String(s||'').toLowerCase().normalize('NFKC').replace(/[^\\p{L}\\p{N}]+/gu,'-').replace(/^-+|-+$/g,'').slice(0,60);\nconst normUrl=(u)=>{u=String(u||'').trim().replace(/^https?:\\/\\//i,'');if(!u)return '';if(/[\\s,]/.test(u)||!u.includes('.'))return '';return 'https://'+u;};\nconst hostOf=(u)=>String(u||'').replace(/^https?:\\/\\//i,'').replace(/^www\\./i,'').split('/')[0].toLowerCase();\nconst isEmail=(e)=>/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(e);\nconst now=new Date().toISOString();\nconst parse=(raw0)=>{let raw=String(raw0||'').trim().replace(/^```(json)?/i,'').replace(/```\\s*$/,'').trim();try{const p=JSON.parse(raw);if(p&&Array.isArray(p.clubs))return p.clubs;}catch(e){}const o=[];const st=[];for(let i=0;i<raw.length;i++){const c=raw[i];if(c==='{')st.push(i);else if(c==='}'){const s=st.pop();if(s!=null){try{const x=JSON.parse(raw.slice(s,i+1));if(x&&('name' in x))o.push(x);}catch(_){}}}}return o;};\nconst findClub=async(k)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:\"(dedup_key='\"+k+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nconst findContact=async(e)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs:{filter:\"(email='\"+e.replace(/'/g,'')+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nlet created=0,updated=0,failed=0,total=0,contactsC=0,hadAny=false; const seen={};\nfor(let i=0;i<exp.length;i++){ const e=exp[i]||{}; const ag=ags[i]||{}; if(e.hadContent) hadAny=true; const src=e.dirUrl; const dirHost=hostOf(src);\n  for(const c of parse(ag.output)){ const name=String((c&&c.name)||'').replace(/\\*+/g,'').trim(); if(!name) continue;\n    const city=String((c&&c.city)||'').trim(); const region=String((c&&c.region)||'').trim()||e.region||'';\n    const dedup=fivb+':'+uslug(name); if(seen[dedup])continue; seen[dedup]=1; total++;\n    let website=normUrl(c&&c.website); if(website&&dirHost&&hostOf(website)===dirHost) website='';\n    const base={federation:fedId,name,country,region,city,dedup_key:dedup,last_scraped:now};\n    const full=Object.assign({},base,{website_url:website,website_source:website?'official_list':'none',source_url:src,status:'new'});\n    let clubId=null;\n    try{ try{const rec=await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/clubs/records',headers:pbH,body:full,json:true});created++;clubId=rec.id;}\n      catch(er){const ex=await findClub(dedup);if(ex){const p=Object.assign({},base);if(website){p.website_url=website;p.website_source='official_list';}if(!ex.source_url)p.source_url=src;await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/clubs/records/'+ex.id,headers:pbH,body:p,json:true});updated++;clubId=ex.id;}else throw er;} }\n    catch(er){failed++;continue;}\n    for(const ct of (Array.isArray(c&&c.contacts)?c.contacts:[])){ const email=String((ct&&ct.email)||'').trim().toLowerCase(); if(!email||!isEmail(email))continue;\n      try{await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/contacts/records',headers:pbH,body:{club:clubId,email,name:String((ct&&ct.name)||'').trim(),position:String((ct&&ct.position)||'').trim(),phone:String((ct&&ct.phone)||'').trim(),source_url:src,source_type:'directory',verification_status:'unverified'},json:true});contactsC++;}\n      catch(er){try{const ex=await findContact(email);if(ex&&!ex.club){await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/contacts/records/'+ex.id,headers:pbH,body:{club:clubId},json:true});}}catch(_){}}\n    }\n  }\n}\nlet status=(created+updated>0)?'scraped':(hadAny?'needs_review':'error');\nawait this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/federations/records/'+fedId,headers:pbH,body:{status,last_scraped:now,club_count:total,scrape_note:'federated: '+(created+updated)+' clubs from '+exp.length+' regional dir(s)'},json:true});\nreturn [{json:{ok:created+updated>0,federation:fivb,dirs:exp.length,total,created,updated,failed,contactsCreated:contactsC}}];\n"
+      },
+      "id": "apply",
+      "name": "Apply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "PB Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PB Auth": {
+      "main": [
+        [
+          {
+            "node": "Get Federation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Federation": {
+      "main": [
+        [
+          {
+            "node": "List dirs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List dirs": {
+      "main": [
+        [
+          {
+            "node": "Firecrawl dir",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firecrawl dir": {
+      "main": [
+        [
+          {
+            "node": "Expand",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand": {
+      "main": [
+        [
+          {
+            "node": "Extract clubs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract clubs": {
+      "main": [
+        [
+          {
+            "node": "Apply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extract clubs",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "templateId": "leblovina-extract-federated"
+  }
+}
