@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { FederationsPage } from '@/features/federations/FederationsPage'
 import { ClubsPage } from '@/features/clubs/ClubsPage'
+import { ContactsPage } from '@/features/contacts/ContactsPage'
 
-const VIEWS = ['federations', 'clubs'] as const
+const VIEWS = ['federations', 'clubs', 'contacts'] as const
 type View = (typeof VIEWS)[number]
 
 // The current view lives in the URL path (`/federations`, `/clubs`) so it
@@ -18,40 +19,48 @@ function pathToView(path: string): View {
   return (VIEWS as readonly string[]).includes(seg) ? (seg as View) : 'federations'
 }
 
-// A navigation target = view + optional clubs country filter, both encoded in the
-// URL (`/clubs?country=Bulgaria`) so they survive refresh and back/forward.
+// A navigation target = view + optional filters, encoded in the URL
+// (`/clubs?country=Bulgaria`, `/contacts?club=<id>`) so they survive refresh and
+// back/forward. `country` drives the Clubs filter; `club` drives the Contacts filter.
 interface Loc {
   view: View
   country: string | null
+  club: string | null
 }
 function readLoc(): Loc {
+  const p = new URLSearchParams(window.location.search)
   return {
     view: pathToView(window.location.pathname),
-    country: new URLSearchParams(window.location.search).get('country'),
+    country: p.get('country'),
+    club: p.get('club'),
   }
 }
 
-function useNav(): [Loc, (view: View, country?: string | null) => void] {
+type NavOpts = { country?: string | null; club?: string | null }
+function useNav(): [Loc, (view: View, opts?: NavOpts) => void] {
   const [loc, setLoc] = useState<Loc>(() => readLoc())
   useEffect(() => {
     const onPop = () => setLoc(readLoc())
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
-  const navigate = useCallback((view: View, country?: string | null) => {
-    const qs = country ? '?country=' + encodeURIComponent(country) : ''
-    const target = '/' + view + qs
+  const navigate = useCallback((view: View, opts?: NavOpts) => {
+    const p = new URLSearchParams()
+    if (opts?.country) p.set('country', opts.country)
+    if (opts?.club) p.set('club', opts.club)
+    const qs = p.toString()
+    const target = '/' + view + (qs ? '?' + qs : '')
     if (target !== window.location.pathname + window.location.search) {
       window.history.pushState(null, '', target)
     }
-    setLoc({ view, country: country ?? null })
+    setLoc({ view, country: opts?.country ?? null, club: opts?.club ?? null })
   }, [])
   return [loc, navigate]
 }
 
 export default function App() {
   const [authed, setAuthed] = useState(pb.authStore.isValid)
-  const [{ view, country }, navigate] = useNav()
+  const [{ view, country, club }, navigate] = useNav()
 
   useEffect(() => pb.authStore.onChange(() => setAuthed(pb.authStore.isValid)), [])
 
@@ -65,6 +74,7 @@ export default function App() {
           <nav className="flex gap-1">
             <NavButton active={view === 'federations'} onClick={() => navigate('federations')}>Federations</NavButton>
             <NavButton active={view === 'clubs'} onClick={() => navigate('clubs')}>Clubs</NavButton>
+            <NavButton active={view === 'contacts'} onClick={() => navigate('contacts')}>Contacts</NavButton>
           </nav>
           <div className="ml-auto flex items-center gap-3">
             <GateSelector />
@@ -76,10 +86,12 @@ export default function App() {
 
       <main className="mx-auto max-w-7xl px-6 py-6">
         {view === 'federations' ? (
-          <FederationsPage onOpenClubs={(c) => navigate('clubs', c)} />
-        ) : (
+          <FederationsPage onOpenClubs={(c) => navigate('clubs', { country: c })} />
+        ) : view === 'clubs' ? (
           // key by country so navigating to a different country re-inits the filter
-          <ClubsPage key={country ?? ''} initialCountry={country} />
+          <ClubsPage key={country ?? ''} initialCountry={country} onOpenContacts={(id) => navigate('contacts', { club: id })} />
+        ) : (
+          <ContactsPage key={club ?? ''} initialClub={club} />
         )}
       </main>
     </div>

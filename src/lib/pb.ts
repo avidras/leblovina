@@ -75,3 +75,33 @@ export interface Club {
   created: string
   updated: string
 }
+
+export type VerificationStatus =
+  | 'unverified' | 'mx_only' | 'verified' | 'catch_all' | 'undeliverable' | 'unknown'
+export const VERIFICATION_STATUSES: VerificationStatus[] = [
+  'unverified', 'mx_only', 'verified', 'catch_all', 'undeliverable', 'unknown',
+]
+
+// Provenance: federation directory vs the club's own site (Phase 3) vs manual.
+export type ContactSourceType = 'directory' | 'club_site' | 'manual'
+export const CONTACT_SOURCE_TYPES: ContactSourceType[] = ['directory', 'club_site', 'manual']
+
+// Mirrors the `contacts` collection schema. clubs 1:N contacts.
+export interface Contact {
+  id: string
+  club: string
+  email: string
+  name: string
+  position: string
+  phone: string
+  source_url: string
+  source_type: ContactSourceType | ''
+  verification_status: VerificationStatus | ''
+  verified_at: string
+  quality: 'A' | 'B' | 'C' | ''
+  notes: string
+  created: string
+  updated: string
+  // populated when we fetch with ?expand=club
+  expand?: { club?: Club }
+}

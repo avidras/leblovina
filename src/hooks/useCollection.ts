@@ -3,14 +3,14 @@ import { pb } from '@/lib/pb'
 
 // Fetch a full collection (capped) and live-refetch on realtime events.
 // Filtering/sorting/search is done client-side in the page (fine at this scale).
-export function useCollection<T>(collection: string, sort = '-created') {
+export function useCollection<T>(collection: string, sort = '-created', expand?: string) {
   const [items, setItems] = useState<T[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
-      const list = await pb.collection(collection).getFullList<T>({ sort, batch: 500 })
+      const list = await pb.collection(collection).getFullList<T>({ sort, batch: 500, expand })
       setItems(list)
       setError(null)
     } catch (e) {
@@ -18,7 +18,7 @@ export function useCollection<T>(collection: string, sort = '-created') {
     } finally {
       setLoading(false)
     }
-  }, [collection, sort])
+  }, [collection, sort, expand])
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null

@@ -81,9 +81,12 @@ Each step lists **Goal · Work · Done when**. `[P0/P1/P2]` = priority within th
   whenever clubs have `detail_url`.
   - *Done when:* a full federation's detail-page contacts harvest completes without timeout,
     automatically, as part of processing.
-- **2.3 Contacts UI `[P1]`.** A **Contacts page** (club, email, position, phone, source,
-  status) + a **contacts count/expand column** on the Clubs page.
-  - *Done when:* the 770+ contacts are visible and filterable in the app.
+- **2.3 Contacts UI `[P1]`. ✅ DONE.** Contacts page (Club, Country, Email, Position, Phone,
+  **From** = source_type tag, Source, Verification) with search + source + verification filters;
+  Clubs page has a **Contacts count** column linking to `/contacts?club=<id>`. Added a
+  `source_type` field (`directory`/`club_site`/`manual`; existing 774 backfilled `directory`;
+  extractors now tag `directory`).
+  - *Done when:* the 770+ contacts are visible and filterable in the app. ✓
 
 ### Phase 3 — Europe-wide run + closed-loop QA
 - **3.1 Run detect + extract across all CEV federations `[P1]`.** `process-federation`

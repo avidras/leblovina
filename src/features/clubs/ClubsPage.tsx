@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { type Club, WEBSITE_STATUSES } from '@/lib/pb'
 import { useCollection } from '@/hooks/useCollection'
+import { useContactCountsByClub } from '@/hooks/useContactCounts'
 import { triggerBatchEnrich } from '@/lib/n8n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,8 +12,9 @@ import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
 type SortKey = 'name' | 'country' | 'region' | 'city' | 'status'
 
-export function ClubsPage({ initialCountry }: { initialCountry?: string | null } = {}) {
+export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?: string | null; onOpenContacts?: (clubId: string) => void } = {}) {
   const { items, loading, error } = useCollection<Club>('clubs', 'name')
+  const contactCounts = useContactCountsByClub()
   const [q, setQ] = useState('')
   const [country, setCountry] = useState(initialCountry ?? '')
   const [hasSite, setHasSite] = useState('')
@@ -126,6 +128,7 @@ export function ClubsPage({ initialCountry }: { initialCountry?: string | null }
               <TH>Website</TH>
               <TH>Web status</TH>
               <TH>Detail</TH>
+              <TH className="text-right">Contacts</TH>
               <TH sortable sorted={sortedOf('status')} onClick={() => toggleSort('status')}>Status</TH>
             </TR>
           </THead>
@@ -152,6 +155,13 @@ export function ClubsPage({ initialCountry }: { initialCountry?: string | null }
                   {c.detail_url
                     ? <a className="text-blue-600 hover:underline" href={c.detail_url} target="_blank" rel="noreferrer">page ↗</a>
                     : <span className="text-neutral-400">—</span>}
+                </TD>
+                <TD className="text-right tabular-nums">
+                  {contactCounts[c.id] ? (
+                    <button className="font-medium text-blue-600 hover:underline" onClick={() => onOpenContacts?.(c.id)}>
+                      {contactCounts[c.id]}
+                    </button>
+                  ) : <span className="text-neutral-400">0</span>}
                 </TD>
                 <TD>{c.status ? <Badge tone={statusTone(c.status)}>{c.status}</Badge> : '—'}</TD>
               </TR>

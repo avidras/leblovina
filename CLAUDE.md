@@ -181,7 +181,9 @@ gate is driven from here, not hardcoded in n8n. See `specs/club-discovery.md`.
 
 ### `contacts` — Phase 3 (collection now exists; seeded early during extraction)
 | club (relation), email (**required**), name, position, phone, source_url,
-  verification_status, verified_at, quality |
+  source_type, verification_status, verified_at, quality |
+- `source_type`: `directory` (federation list/PDF/detail) / `club_site` (Phase-3 site crawl) /
+  `manual` — provenance tag shown on the Contacts page.
 - Unique index on `email`.
 - `source_url` lives **here**, per email — one club can yield emails from several pages.
 - **Seeded during Phase-2 extraction** when a directory already exposes contacts (list/PDF/
