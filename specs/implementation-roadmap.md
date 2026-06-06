@@ -69,11 +69,14 @@ Each step lists **Goal · Work · Done when**. `[P0/P1/P2]` = priority within th
   - *Done when:* both buttons work; "only unresolved" skips already-resolved clubs.
 
 ### Phase 2 — Detection quality + contacts foundation
-- **2.1 Reliable directory counts `[P1]`.** Discovery must emit a **real** club count (count
-  actual rows/links on the directory page), not an LLM estimate — so Phase-3 QA is
-  trustworthy. (Czechia proved estimates are unreliable: note "~160" vs 888 real clubs.)
-  - *Done when:* the discovery note/field carries a counted (not guessed) figure for
-    table/list directories.
+- **2.1 Reliable directory counts `[P1]`. ✅ DONE.** Extractors now write a deterministic
+  `federations.club_count` independent of the LLM: **exact array length** for API/embedded-JSON;
+  **table-row/list-item count** for HTML/PDF. Phase-3 QA flags `created ≪ club_count`.
+- **2.1b Dedup stabilization `[P1]`. ✅ DONE (surfaced while verifying 2.1).** html/PDF dedup key
+  is now **name-only** `<fed>:<uslug(name)>` — including the LLM-variable `city` was creating
+  duplicates on re-run (country-as-city etc.). Cleaned 107 existing dupes across 10 federations
+  (contacts moved to survivors; 1,777 survivors re-keyed). Re-runs verified idempotent — this
+  unblocks the Phase-3 mass re-run. See `specs/club-dedup-stability.md` (amendment).
 - **2.2 "URL → contacts" primitive, batched & integrated `[P1]`.** Unify inline + detail-page
   contact extraction into **one** capability: given a URL, fetch → extract contacts
   (email/name/position/phone, domain rule #1) → upsert. Make it **batched/async** (the 139-club

@@ -166,7 +166,7 @@ See `specs/club-discovery.md`. Discovered via an agentic, search-led, tiered pip
 | source_url     | url      | the directory page the club came from |
 | detail_url     | url      | the catalog's per-club detail page (richer contact data for Phase 3), if any. The html extractor backfills it from each club's listing link (LLM + deterministic link-map fallback) |
 | source_club_id | text     | source's own id/code if any |
-| dedup_key      | text     | **required, unique**. Html directories: name-based `<fed>:<uslug(name)>:<uslug(city)>` so the same club **merges across a federation's multiple lists** (detail_url is backfilled, not part of the key). Catalog/API sources with stable per-club ids: `<fed>:<urlPath(detail)>`. `uslug` keeps non-Latin letters (no Cyrillic collapse). See `specs/club-dedup-stability.md` |
+| dedup_key      | text     | **required, unique**. Html/PDF directories: **name-only** `<fed>:<uslug(name)>` (city dropped — it was LLM-variable, e.g. country-as-city, and broke re-run idempotency; see below). Catalog/API sources with stable per-club ids: `<fed>:<urlPath(detail)>`. `uslug` keeps non-Latin letters (no Cyrillic collapse). See `specs/club-dedup-stability.md` |
 | status         | select   | new / contacts_found / no_contacts / error / needs_review |
 | last_scraped   | date     | |
 | notes          | text     | |

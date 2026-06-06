@@ -86,7 +86,16 @@ listings**, for two reasons found on Croatia + Romania:
   `<fed>:/index.php`. Romania's is a path slug (`/cluburi_volei/<slug>/`). No single
   detail-path rule keys both.
 
-**Decision (html extractor only):** `dedup_key = <fed>:<uslug(name)>:<uslug(city)>` always;
+**Amendment (2026-06-06): html/PDF dedup is now NAME-ONLY — `<fed>:<uslug(name)>`.** Including
+`uslug(city)` broke re-run idempotency: the LLM extracts the city inconsistently (sometimes the
+country, e.g. "Barbados", sometimes empty), so the same club got two keys
+(`BAR:advent-ballers:barbados` vs `BAR:advent-ballers:`) and re-running created duplicates
+(~107 found across 10 federations and merged; contacts moved to the survivor; survivors re-keyed
+name-only). Verified idempotent afterwards (re-run BAR: created 0, updated 21). Tradeoff: two
+genuinely distinct same-name clubs in one federation would merge (rare); idempotency wins.
+Catalog/API (`extract-clubs.json`) keeps detail-path keys (stable, not city-dependent).
+
+**Superseded decision (html extractor):** `dedup_key = <fed>:<uslug(name)>:<uslug(city)>` always;
 `detail_url` is a **backfilled field**, never part of the key. On update, non-empty
 `detail_url`/`website` are written but never blanked (so a later, poorer list can't erase a
 richer one). The catalog/API extractor (`extract-clubs.json`) is unchanged — its detail-path
