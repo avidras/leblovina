@@ -64,9 +64,11 @@ export async function triggerExtractFederation(fed: Federation): Promise<Trigger
 }
 
 // Phase 2.5: batch validate + Serper-resolve websites for clubs (async, background).
-export async function triggerBatchEnrich(ids: string[]): Promise<TriggerResult> {
+// force=true re-resolves clubs even if they already have a live website (fixes wrong
+// auto-picked sites); official_list/manual URLs are still protected server-side.
+export async function triggerBatchEnrich(ids: string[], force = false): Promise<TriggerResult> {
   if (!BATCH_ENRICH_URL) {
     return { ok: false, status: 0, error: 'VITE_N8N_BATCH_ENRICH_URL is not set' }
   }
-  return postWebhook(BATCH_ENRICH_URL, { ids })
+  return postWebhook(BATCH_ENRICH_URL, { ids, force })
 }

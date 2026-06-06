@@ -53,7 +53,7 @@
         "url": "https://n8n-2.biceps.digital/webhook/enrich-club",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ id: $json.id }) }}",
+        "jsonBody": "={{ JSON.stringify({ id: $json.id, force: (($('Webhook').first().json.body)||{}).force === true }) }}",
         "options": {
           "timeout": 120000
         }

@@ -44,15 +44,24 @@ export function ClubsPage({ initialCountry }: { initialCountry?: string | null }
   }
   const sortedOf = (key: SortKey) => (sort.key === key ? sort.dir : (false as const))
 
-  async function resolveWebsites() {
-    const ids = rows.map((c) => c.id)
+  // Clubs never resolved yet (no resolve attempt recorded).
+  const unresolvedRows = useMemo(
+    () => rows.filter((c) => !c.website_status || c.website_status === 'unknown'),
+    [rows],
+  )
+
+  // mode 'unresolved' → only clubs never resolved; mode 'all' → re-resolve everything (force).
+  async function resolveWebsites(mode: 'all' | 'unresolved') {
+    const target = mode === 'all' ? rows : unresolvedRows
+    const ids = target.map((c) => c.id)
     if (ids.length === 0) return
-    if (!window.confirm(`Validate + Serper-resolve websites for ${ids.length} club(s)? Runs in the background.`)) return
+    const what = mode === 'all' ? `re-resolve ALL ${ids.length}` : `resolve ${ids.length} unresolved`
+    if (!window.confirm(`Serper + AI ${what} club website(s)? Runs in the background.`)) return
     setEnrichBusy(true)
     setEnrichMsg(null)
-    const r = await triggerBatchEnrich(ids)
+    const r = await triggerBatchEnrich(ids, mode === 'all')
     setEnrichBusy(false)
-    setEnrichMsg(r.ok ? `Queued ${ids.length} — website_status updates live.` : `Failed: ${r.error || r.status}`)
+    setEnrichMsg(r.ok ? `Queued ${ids.length} — web status updates live.` : `Failed: ${r.error || r.status}`)
   }
 
   if (error) return <div className="p-6 text-sm text-red-600">Failed to load clubs: {error}</div>
@@ -85,10 +94,18 @@ export function ClubsPage({ initialCountry }: { initialCountry?: string | null }
         <span className="ml-auto text-sm text-neutral-500">{rows.length} / {items.length}{loading ? ' · loading…' : ''}</span>
         <Tooltip
           side="bottom"
-          content="For every club in the current filter: validate its website (cheap HTTP), then Serper-resolve a site for clubs without a live one. Runs in the background; web status updates live."
+          content="Resolve a website only for clubs in the current filter that were never resolved before (web status unknown). Serper + AI picks the club's own site. Runs in the background."
         >
-          <Button size="sm" variant="outline" disabled={enrichBusy || rows.length === 0} onClick={resolveWebsites}>
-            {enrichBusy ? 'Queuing…' : `Resolve ${rows.length}`}
+          <Button size="sm" variant="outline" disabled={enrichBusy || unresolvedRows.length === 0} onClick={() => resolveWebsites('unresolved')}>
+            {enrichBusy ? 'Queuing…' : `Resolve unresolved (${unresolvedRows.length})`}
+          </Button>
+        </Tooltip>
+        <Tooltip
+          side="bottom"
+          content="Re-resolve EVERY club in the current filter (incl. already-resolved), re-picking the club's own site via Serper + AI — fixes wrong auto-picked sites. Directory/manual URLs are kept. Runs in the background."
+        >
+          <Button size="sm" variant="outline" disabled={enrichBusy || rows.length === 0} onClick={() => resolveWebsites('all')}>
+            {`Re-resolve all (${rows.length})`}
           </Button>
         </Tooltip>
       </div>

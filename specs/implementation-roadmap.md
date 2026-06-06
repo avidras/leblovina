@@ -48,7 +48,13 @@ Each step lists **Goal · Work · Done when**. `[P0/P1/P2]` = priority within th
   `waitFor`, `extract-club-contacts` workflow) and update `STATUS.md`.
   - *Done when:* working tree clean, prod and repo in sync.
 
-### Phase 1 — Website resolution quality  *(gates all contact work)*
+### Phase 1 — Website resolution quality  *(gates all contact work)* — ✅ DONE
+> `enrich-club` now picks the club's own site via an LLM judgment over the Serper results
+> (rejects ticketing/registries/social/news; still finds translated-domain sites), with safety
+> guards (only a result-present host, not blocklisted, must be live). Two trigger modes shipped:
+> **Resolve unresolved** (web status unknown) and **Re-resolve all** (force; overrides the
+> existing-live short-circuit for auto/empty-sourced clubs, protects official_list/manual).
+> Verified: ticketmaster.fi→ankkuritpesis.fi, spordiregister.ee→beach44.ee, lionhearts.bg kept.
 - **1.1 Fix Serper relevance `[P0]`.** Resolve currently attaches unrelated domains
   (`ticketmaster.fi`, `spordiregister.ee`). Rework candidate selection in `enrich-club`:
   - Expand the blocklist: ticketing/aggregators (ticketmaster, eventim…), national sport
