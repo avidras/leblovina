@@ -133,7 +133,10 @@ The product is contacts; most clubs' contacts live only on **their own websites*
 - **5.3 Batched/async orchestration `[P1]`.** Resumable, rate-limited, Europe-first; a
   long-running background job, not a sync webhook.
   - *Done when:* clubs with websites yield on-domain contacts at scale, written `unverified`.
-  - *Own spec before building:* `specs/club-site-contact-scraper.md`.
+  - **Spec written:** `specs/club-site-contact-scraper.md` (decisions locked: targeted crawl +
+    Apify escalation; scope = all live-website clubs, Europe-first, email-dedup; form-only
+    skipped; per-club incremental writes; bounded-concurrency driver to fix the harvest's
+    sequential-slowness; Gemini + onError:continue + idempotent/resumable).
 
 ### Out of scope (next implementation / Phase 3+ tail)
 Email **verification** (MX/SMTP), **A/B/C quality** scoring, **Brevo** push, and the
