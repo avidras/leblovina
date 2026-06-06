@@ -6,13 +6,17 @@
 // quality. See specs/club-contacts-from-directory.md.
 //   Domain rule #1: only ever store an email that was deterministically present
 //   in the source — never pattern-guessed or AI-invented.
+// Idempotent: this collection was first created live via the PB API, so on a DB
+// that already has it the create is skipped (prevents a "name must be unique"
+// boot failure on redeploy); on a fresh DB it creates normally.
 migrate((app) => {
+  try { app.findCollectionByNameOrId("contacts"); return; } catch (e) { /* not found -> create */ }
+
   const clubs = app.findCollectionByNameOrId("clubs");
 
   const collection = new Collection({
     type: "base",
     name: "contacts",
-    // Locked down — access via the app/n8n, not public.
     listRule: null,
     viewRule: null,
     createRule: null,
@@ -28,23 +32,19 @@ migrate((app) => {
         maxSelect: 1,
         minSelect: 0,
       },
-      // The only required contact field. Never invented (domain rule #1).
       { name: "email", type: "text", required: true, presentable: true, max: 0 },
-      // Contact person name, optional.
       { name: "name", type: "text", required: false, max: 0 },
-      // Role/title, optional (e.g. "President", "Secretary").
       { name: "position", type: "text", required: false, max: 0 },
       { name: "phone", type: "text", required: false, max: 0 },
+      { name: "source_url", type: "url", required: false, exceptDomains: null, onlyDomains: null },
       {
-        // Provenance per contact — the list/PDF/detail page it came from.
-        name: "source_url",
-        type: "url",
+        name: "source_type",
+        type: "select",
         required: false,
-        exceptDomains: null,
-        onlyDomains: null,
+        maxSelect: 1,
+        values: ["directory", "club_site", "manual"],
       },
       {
-        // State, not a boolean. Directory-harvested contacts start unverified.
         name: "verification_status",
         type: "select",
         required: false,
@@ -52,20 +52,12 @@ migrate((app) => {
         values: ["unverified", "mx_only", "verified", "catch_all", "undeliverable", "unknown"],
       },
       { name: "verified_at", type: "date", required: false },
-      {
-        // Computed in Phase 3, null now.
-        name: "quality",
-        type: "select",
-        required: false,
-        maxSelect: 1,
-        values: ["A", "B", "C"],
-      },
+      { name: "quality", type: "select", required: false, maxSelect: 1, values: ["A", "B", "C"] },
       { name: "notes", type: "text", required: false, max: 0 },
       { name: "created", type: "autodate", onCreate: true, onUpdate: false },
       { name: "updated", type: "autodate", onCreate: true, onUpdate: true },
     ],
     indexes: [
-      // Outreach-level dedup — find-or-create by email.
       "CREATE UNIQUE INDEX `idx_contacts_email` ON `contacts` (`email`)",
       "CREATE INDEX `idx_contacts_club` ON `contacts` (`club`)",
     ],
@@ -73,5 +65,5 @@ migrate((app) => {
 
   return app.save(collection);
 }, (app) => {
-  return app.delete(app.findCollectionByNameOrId("contacts"));
+  try { return app.delete(app.findCollectionByNameOrId("contacts")); } catch (e) { /* gone */ }
 });
