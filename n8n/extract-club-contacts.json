@@ -5,7 +5,7 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "extract-club-contacts",
-        "responseMode": "responseNode",
+        "responseMode": "onReceived",
         "options": {}
       },
       "id": "wh",
@@ -68,7 +68,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst body=($('Webhook').first().json.body)||{};\nconst fedId=body.id; const limit=body.limit?Number(body.limit):0;\nlet items=[]; let page=1;\nwhile(true){ const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:'federation=\"'+fedId+'\" && detail_url!=\"\"',perPage:200,page,fields:'id,name,detail_url'},headers:pbH,json:true}); items=items.concat(r.items||[]); if(page>=(r.totalPages||1))break; page++; }\nif(limit>0) items=items.slice(0,limit);\nif(!items.length) return [{json:{__skip:true,note:'no clubs with detail_url'}}];\nreturn items.map(c=>({json:{clubId:c.id,name:c.name,detailUrl:c.detail_url}}));\n"
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst body=($('Webhook').first().json.body)||{};\nconst fedId=body.id; const limit=body.limit?Number(body.limit):0;\nlet items=[]; let page=1;\nwhile(true){ const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:'federation=\"'+fedId+'\" && detail_url!=\"\" && status!=\"contacts_found\"',perPage:200,page,fields:'id,name,detail_url'},headers:pbH,json:true}); items=items.concat(r.items||[]); if(page>=(r.totalPages||1))break; page++; }\nif(limit>0) items=items.slice(0,limit);\nif(!items.length) return [{json:{__skip:true,note:'no clubs with detail_url'}}];\nreturn items.map(c=>({json:{clubId:c.id,name:c.name,detailUrl:c.detail_url}}));\n"
       },
       "id": "list",
       "name": "List clubs",
@@ -110,7 +110,10 @@
         60,
         0
       ],
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -127,33 +130,11 @@
       "position": [
         240,
         0
-      ]
-    },
-    {
-      "parameters": {
-        "model": {
-          "__rl": true,
-          "mode": "list",
-          "value": "claude-haiku-4-5"
-        },
-        "options": {
-          "maxTokensToSample": 4000
-        }
-      },
-      "id": "model",
-      "name": "Anthropic Chat Model",
-      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
-      "typeVersion": 1.3,
-      "position": [
-        240,
-        200
       ],
-      "credentials": {
-        "anthropicApi": {
-          "id": "PsTv3b7j6pP2jeMt",
-          "name": "Anthropic (leblovina)"
-        }
-      }
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 4000,
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -172,18 +153,23 @@
     },
     {
       "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json }}",
+        "modelName": "models/gemini-2.5-flash",
         "options": {}
       },
-      "id": "resp",
-      "name": "Respond",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
+      "id": "gmodel",
+      "name": "Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
       "position": [
-        620,
-        0
-      ]
+        560,
+        300
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "bk0TwlDz0lEZUfic",
+          "name": "Gemini (leblovina)"
+        }
+      }
     }
   ],
   "connections": {
@@ -253,18 +239,18 @@
         ]
       ]
     },
-    "Write contacts": {
-      "main": [
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
         [
           {
-            "node": "Respond",
-            "type": "main",
+            "node": "Extract contact",
+            "type": "ai_languageModel",
             "index": 0
           }
         ]
       ]
     },
-    "Anthropic Chat Model": {
+    "Gemini Chat Model": {
       "ai_languageModel": [
         [
           {
