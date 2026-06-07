@@ -136,17 +136,17 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
           </button>
         )}
         <FilterPanel activeCount={[srcFilter, vsFilter, countryF].filter(Boolean).length}>
-          <Select className="w-full" value={countryF} onChange={(e) => { setCountryF(e.target.value); resetPage() }} title="Filter by country">
+          <Select className="w-full" active={!!countryF} value={countryF} onChange={(e) => { setCountryF(e.target.value); resetPage() }} title="Filter by country">
             <option value="">Any country</option>
             {countries.map((c) => (<option key={c} value={c}>{c}</option>))}
           </Select>
-          <Select className="w-full" value={srcFilter} onChange={(e) => { setSrcFilter(e.target.value); resetPage() }}>
+          <Select className="w-full" active={!!srcFilter} value={srcFilter} onChange={(e) => { setSrcFilter(e.target.value); resetPage() }}>
             <option value="">Any source</option>
             {CONTACT_SOURCE_TYPES.map((s) => (
               <option key={s} value={s}>{sourceTypeLabel(s)}</option>
             ))}
           </Select>
-          <Select className="w-full" value={vsFilter} onChange={(e) => { setVsFilter(e.target.value); resetPage() }}>
+          <Select className="w-full" active={!!vsFilter} value={vsFilter} onChange={(e) => { setVsFilter(e.target.value); resetPage() }}>
             <option value="">Any verification</option>
             {VERIFICATION_STATUSES.map((s) => (
               <option key={s} value={s}>{verificationLabel(s)}</option>

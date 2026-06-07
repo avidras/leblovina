@@ -147,13 +147,13 @@ export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string
       <div className="flex flex-wrap items-center gap-2">
         <Input className="max-w-xs" placeholder="Search name / country / code…" value={q} onChange={(e) => { setQ(e.target.value); resetPage() }} />
         <FilterPanel activeCount={[conf, status].filter(Boolean).length}>
-          <Select className="w-full" value={conf} onChange={(e) => { setConf(e.target.value); resetPage() }}>
+          <Select className="w-full" active={!!conf} value={conf} onChange={(e) => { setConf(e.target.value); resetPage() }}>
             <option value="">All confederations</option>
             {CONFEDERATIONS.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
           </Select>
-          <Select className="w-full" value={status} onChange={(e) => { setStatus(e.target.value); resetPage() }}>
+          <Select className="w-full" active={!!status} value={status} onChange={(e) => { setStatus(e.target.value); resetPage() }}>
             <option value="">All statuses</option>
             {FEDERATION_STATUSES.map((s) => (
               <option key={s} value={s}>{statusLabel(s)}</option>

@@ -109,7 +109,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (v: NavView) => void
                 ))}
                 {s.searchClubs > 0 && (
                   <tr className="border-b border-neutral-100 last:border-0 bg-neutral-50/60">
-                    <td className="px-4 py-2 font-medium text-neutral-800">No federation (search)</td>
+                    <td className="px-4 py-2 font-medium text-neutral-800">No federation (Google search and scrape)</td>
                     <td className="px-4 py-2 text-right tabular-nums">{s.searchClubs.toLocaleString()}</td>
                     <td className="px-4 py-2 text-right tabular-nums">{s.searchContacts.toLocaleString()}</td>
                   </tr>

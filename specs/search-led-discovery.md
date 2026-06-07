@@ -92,12 +92,13 @@ Code-only. Each tick:
 
 ### Processor — `search-keyword-process` (webhook, one keyword per call)
 1. Get the `search_keywords` row.
-2. **Serper** search (organic, `num:10`).
+2. **Serper** search (organic, `num:100` — all available results for the keyword, not just the
+   first page; Google returns fewer for niche queries, which is fine).
 3. **Prepare candidates** (Code): blocklist-filter hosts (social, news, wiki/fandom, FIVB/CEV/
    federation, results platforms — dataproject/sofascore/flashscore…, retail/marketplace,
    ticketing, maps, gov, video, blog platforms); dedup by host; fetch each homepage (plain
-   HTTP, cap 8); **strict deterministic pre-screen** — must show a volleyball signal and not be
-   parked/for-sale; collect title/og:site_name/h1/excerpt signals.
+   HTTP, cap 40, **in parallel chunks of 10**); **strict deterministic pre-screen** — must show
+   a volleyball signal and not be parked/for-sale; collect title/og:site_name/h1/excerpt signals.
 4. **Strict classifier** (Anthropic Haiku, one call for all candidates): *is this the official
    site of a SINGLE real volleyball CLUB?* Reject federations, leagues/results/stats,
    news/blogs, shops, directories/portals, schools-without-a-club, arenas/municipality,
@@ -120,6 +121,15 @@ site-scrape queue + worker, and the dedup/host helpers. Pause via the settings f
   (search)") so its clubs/contacts are counted there (its `confederation` is blank).
 - Optional later: a small "Search discovery" panel (keywords pending/searched, new clubs found)
   mirroring the scrape-queue panel.
+
+### Discovery view (built) — `src/features/discovery/DiscoveryPage.tsx`
+A dedicated **Discovery** nav tab: a keyword table (sortable/filterable by country+status, CSV
+export), a **Generate keywords** control (country + count → `search-keywords-generate`), and a
+**Pause/Resume** control + live stats for the drain (`settings.search_discover`). **Re-search**:
+a per-row action and a bulk "Re-search filtered (N)" action reset keyword(s) to `pending` so the
+drain runs them again (dedup makes reruns idempotent — re-found hosts count as `dup`). Filter
+selects show a subtle blue tint when set to a non-default value (a shared `Select active` prop,
+applied across all list filter panels).
 
 ## Pilot & success criteria
 Pilot countries = the **two biggest long tails** (largest gap between real club population and

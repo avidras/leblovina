@@ -270,34 +270,34 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
       <div className="flex flex-wrap items-center gap-2">
         <Input className="max-w-xs" placeholder="Search club / city / region…" value={q} onChange={(e) => { setQ(e.target.value); resetPage() }} />
         <FilterPanel activeCount={[country, hasSite, wsFilter, wcFilter, ctFilter, srcFilter].filter(Boolean).length}>
-          <Select className="w-full" value={country} onChange={(e) => { setCountry(e.target.value); if (!e.target.value) clearUrlParam('country'); resetPage() }} title="Filter by country">
+          <Select className="w-full" active={!!country} value={country} onChange={(e) => { setCountry(e.target.value); if (!e.target.value) clearUrlParam('country'); resetPage() }} title="Filter by country">
             <option value="">Any country</option>
             {countries.map((c) => (<option key={c} value={c}>{c}</option>))}
           </Select>
-          <Select className="w-full" value={hasSite} onChange={(e) => { setHasSite(e.target.value); resetPage() }}>
+          <Select className="w-full" active={!!hasSite} value={hasSite} onChange={(e) => { setHasSite(e.target.value); resetPage() }}>
             <option value="">Any website</option>
             <option value="yes">Has website</option>
             <option value="no">No website</option>
           </Select>
-          <Select className="w-full" value={wsFilter} onChange={(e) => { setWsFilter(e.target.value); resetPage() }}>
+          <Select className="w-full" active={!!wsFilter} value={wsFilter} onChange={(e) => { setWsFilter(e.target.value); resetPage() }}>
             <option value="">Any web status</option>
             {WEBSITE_STATUSES.map((s) => (
               <option key={s} value={s}>{websiteStatusLabel(s)}</option>
             ))}
           </Select>
-          <Select className="w-full" value={wcFilter} onChange={(e) => { setWcFilter(e.target.value); resetPage() }} title="Filter by website confidence (C = needs review)">
+          <Select className="w-full" active={!!wcFilter} value={wcFilter} onChange={(e) => { setWcFilter(e.target.value); resetPage() }} title="Filter by website confidence (C = needs review)">
             <option value="">Any confidence</option>
             {WEBSITE_CONFIDENCES.map((c) => (
               <option key={c} value={c}>{c === 'unknown' ? 'Unchecked' : `Conf. ${c}`}</option>
             ))}
           </Select>
-          <Select className="w-full" value={ctFilter} onChange={(e) => { setCtFilter(e.target.value); resetPage() }} title="Filter by club type (volleyball vs multi-sport club)">
+          <Select className="w-full" active={!!ctFilter} value={ctFilter} onChange={(e) => { setCtFilter(e.target.value); resetPage() }} title="Filter by club type (volleyball vs multi-sport club)">
             <option value="">Any type</option>
             {CLUB_TYPES.map((t) => (
               <option key={t} value={t}>{clubTypeLabel(t)}</option>
             ))}
           </Select>
-          <Select className="w-full" value={srcFilter} onChange={(e) => { setSrcFilter(e.target.value); resetPage() }} title="Filter by where the club came from (provenance)">
+          <Select className="w-full" active={!!srcFilter} value={srcFilter} onChange={(e) => { setSrcFilter(e.target.value); resetPage() }} title="Filter by where the club came from (provenance)">
             <option value="">Any source</option>
             {WEBSITE_SOURCES.map((s) => (
               <option key={s} value={s}>{WEBSITE_SOURCE_LABEL[s] ?? s}</option>

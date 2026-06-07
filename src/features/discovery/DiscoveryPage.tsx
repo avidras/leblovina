@@ -12,6 +12,7 @@ import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { FilterPanel, ResetFiltersButton } from '@/components/ui/filter-panel'
 import { ActionsMenu } from '@/components/ui/menu'
+import { useConfirm } from '@/components/ui/confirm'
 import { Pagination } from '@/components/ui/pagination'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
@@ -56,7 +57,30 @@ export function DiscoveryPage() {
   const debouncedQ = useDebouncedValue(q, 300)
   const filter = useMemo(() => buildFilter({ q: debouncedQ.trim(), country, status }), [debouncedQ, country, status])
   const sortStr = `${sort.dir === 'asc' ? '+' : '-'}${sort.key}`
-  const { items, totalItems, totalPages, loading, error } = usePagedCollection<SearchKeyword>('search_keywords', { page, perPage, sort: sortStr, filter })
+  const { items, totalItems, totalPages, loading, error, reload } = usePagedCollection<SearchKeyword>('search_keywords', { page, perPage, sort: sortStr, filter })
+  const { confirm, confirmElement } = useConfirm()
+  const [busy, setBusy] = useState(false)
+
+  // Re-search = reset keyword(s) to 'pending' so the drain runs them again (when enabled).
+  async function reSearch(ids: string[]) {
+    setBusy(true)
+    for (let i = 0; i < ids.length; i += 20) {
+      await Promise.all(ids.slice(i, i + 20).map((id) =>
+        pb.collection('search_keywords').update(id, { status: 'pending', attempts: 0 }).catch(() => {})))
+    }
+    setBusy(false)
+    reload()
+  }
+  async function reSearchFiltered() {
+    const ok = await confirm({
+      title: 'Re-search keywords',
+      message: `Reset ${totalItems.toLocaleString()} keyword(s) in the current view to “pending”? The discovery queue will run them again (if not paused).`,
+      confirmLabel: 'Re-search',
+    })
+    if (!ok) return
+    const list = await pb.collection('search_keywords').getFullList<{ id: string }>({ filter: filter || undefined, fields: 'id', batch: 500 })
+    await reSearch(list.map((r) => r.id))
+  }
 
   // distinct countries present in the keyword registry (for the country filter)
   const [countryOpts, setCountryOpts] = useState<string[]>([])
@@ -95,18 +119,24 @@ export function DiscoveryPage() {
       <div className="flex flex-wrap items-center gap-2">
         <Input className="max-w-xs" placeholder="Search keyword…" value={q} onChange={(e) => { setQ(e.target.value); resetPage() }} />
         <FilterPanel activeCount={[country, status].filter(Boolean).length}>
-          <Select className="w-full" value={country} onChange={(e) => { setCountry(e.target.value); resetPage() }} title="Filter by country">
+          <Select className="w-full" active={!!country} value={country} onChange={(e) => { setCountry(e.target.value); resetPage() }} title="Filter by country">
             <option value="">Any country</option>
             {countryOpts.map((c) => (<option key={c} value={c}>{c}</option>))}
           </Select>
-          <Select className="w-full" value={status} onChange={(e) => { setStatus(e.target.value); resetPage() }} title="Filter by status">
+          <Select className="w-full" active={!!status} value={status} onChange={(e) => { setStatus(e.target.value); resetPage() }} title="Filter by status">
             <option value="">Any status</option>
             {STATUSES.map((s) => (<option key={s} value={s}>{s}</option>))}
           </Select>
         </FilterPanel>
         <ResetFiltersButton active={filtersActive} onReset={resetFilters} />
         <span className="ml-auto text-sm text-neutral-500">{totalItems.toLocaleString()} keywords{loading ? ' · loading…' : ''}</span>
-        <ActionsMenu actions={[{ label: 'Export CSV (filtered)', onClick: exportCsv }]} />
+        <ActionsMenu
+          busy={busy}
+          actions={[
+            { label: `Re-search filtered (${totalItems.toLocaleString()})`, description: 'Reset the current view to pending so the queue runs them again', onClick: reSearchFiltered },
+            { label: 'Export CSV (filtered)', onClick: exportCsv },
+          ]}
+        />
       </div>
 
       <Table>
@@ -120,6 +150,7 @@ export function DiscoveryPage() {
             <TH sortable sorted={sortedOf('new_clubs')} onClick={() => toggleSort('new_clubs')} className="text-right">New clubs</TH>
             <TH sortable sorted={sortedOf('dup_count')} onClick={() => toggleSort('dup_count')} className="text-right">Dups</TH>
             <TH sortable sorted={sortedOf('searched_at')} onClick={() => toggleSort('searched_at')}>Searched</TH>
+            <TH className="w-10" />
           </TR>
         </THead>
         <TBody>
@@ -133,6 +164,17 @@ export function DiscoveryPage() {
               <TD className="text-right tabular-nums font-medium text-neutral-800">{k.status === 'searched' ? k.new_clubs : '—'}</TD>
               <TD className="text-right tabular-nums text-neutral-400">{k.status === 'searched' ? k.dup_count : '—'}</TD>
               <TD className="whitespace-nowrap text-xs text-neutral-500" title={k.searched_at ? exactTime(k.searched_at) : ''}>{relTime(k.searched_at)}</TD>
+              <TD className="text-right">
+                <button
+                  type="button"
+                  disabled={busy || k.status === 'pending' || k.status === 'searching'}
+                  onClick={() => reSearch([k.id])}
+                  title="Re-search this keyword"
+                  className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-blue-600 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-neutral-400"
+                >
+                  <ReSearchIcon />
+                </button>
+              </TD>
             </TR>
           ))}
         </TBody>
@@ -140,7 +182,17 @@ export function DiscoveryPage() {
 
       <Pagination page={page} perPage={perPage} totalItems={totalItems} totalPages={totalPages}
         onPage={setPage} onPerPage={(n) => { setPerPage(n); resetPage() }} />
+      {confirmElement}
     </div>
+  )
+}
+
+function ReSearchIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+      <path d="M3 3v5h5" />
+    </svg>
   )
 }
 
