@@ -23,7 +23,7 @@ import { Pagination } from '@/components/ui/pagination'
 import { withFlag, countryFlag } from '@/lib/countries'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
-type SortKey = 'name' | 'country' | 'city' | 'status' | 'last_scraped'
+type SortKey = 'name' | 'country' | 'city' | 'status' | 'last_scraped' | 'website_url' | 'website_status' | 'website_confidence' | 'club_type'
 
 // Combine filter clauses with AND, wrapping each clause so OR-groups stay scoped.
 function andFilter(...clauses: (string | false | undefined)[]): string {
@@ -368,10 +368,10 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
               <TH sortable sorted={sortedOf('name')} onClick={() => toggleSort('name')} className="w-[350px] min-w-[350px] max-w-[350px]">Club</TH>
               <TH sortable sorted={sortedOf('country')} onClick={() => toggleSort('country')} className="w-[140px] min-w-[140px]">Country</TH>
               <TH sortable sorted={sortedOf('city')} onClick={() => toggleSort('city')}>City</TH>
-              <TH>Website</TH>
-              <TH>Web status</TH>
-              <TH>Conf.</TH>
-              <TH>Type</TH>
+              <TH sortable sorted={sortedOf('website_url')} onClick={() => toggleSort('website_url')}>Website</TH>
+              <TH sortable sorted={sortedOf('website_status')} onClick={() => toggleSort('website_status')}>Web status</TH>
+              <TH sortable sorted={sortedOf('website_confidence')} onClick={() => toggleSort('website_confidence')}>Conf.</TH>
+              <TH sortable sorted={sortedOf('club_type')} onClick={() => toggleSort('club_type')}>Type</TH>
               <TH className="text-right">Contacts</TH>
               <TH sortable sorted={sortedOf('status')} onClick={() => toggleSort('status')}>Status</TH>
               <TH sortable sorted={sortedOf('last_scraped')} onClick={() => toggleSort('last_scraped')}>Last scrape</TH>

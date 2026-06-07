@@ -18,7 +18,7 @@ import { downloadCsv } from '@/lib/csv'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 import { ClubDetailDialog } from '@/features/clubs/ClubsPage'
 
-type SortKey = 'club' | 'country' | 'email' | 'position'
+type SortKey = 'club' | 'country' | 'email' | 'position' | 'phone' | 'source' | 'sourceType' | 'verification'
 
 // Map the sortable column to its PocketBase field (club/country are relation fields).
 const SORT_FIELD: Record<SortKey, string> = {
@@ -26,6 +26,10 @@ const SORT_FIELD: Record<SortKey, string> = {
   country: 'club.country',
   email: 'email',
   position: 'position',
+  phone: 'phone',
+  source: 'source_url',
+  sourceType: 'source_type',
+  verification: 'verification_status',
 }
 
 function andFilter(...clauses: (string | false | undefined)[]): string {
@@ -168,10 +172,10 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
               <TH sortable sorted={sortedOf('club')} onClick={() => toggleSort('club')} className="min-w-[220px]">Club</TH>
               <TH sortable sorted={sortedOf('country')} onClick={() => toggleSort('country')}>Country</TH>
               <TH sortable sorted={sortedOf('email')} onClick={() => toggleSort('email')}>Email</TH>
-              <TH>Phone</TH>
-              <TH>From</TH>
-              <TH>Source</TH>
-              <TH>Verification</TH>
+              <TH sortable sorted={sortedOf('phone')} onClick={() => toggleSort('phone')}>Phone</TH>
+              <TH sortable sorted={sortedOf('source')} onClick={() => toggleSort('source')}>From</TH>
+              <TH sortable sorted={sortedOf('sourceType')} onClick={() => toggleSort('sourceType')}>Source</TH>
+              <TH sortable sorted={sortedOf('verification')} onClick={() => toggleSort('verification')}>Verification</TH>
             </TR>
           </THead>
           <TBody>

@@ -23,7 +23,7 @@ import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
 // `clubs` is no longer sortable server-side (it's an aggregate, not a column);
 // `status` sorts alphabetically (PocketBase can only ORDER BY real columns).
-type SortKey = 'fivb_code' | 'name' | 'country' | 'confederation' | 'status' | 'last_scraped'
+type SortKey = 'fivb_code' | 'name' | 'country' | 'confederation' | 'status' | 'last_scraped' | 'website_url'
 
 function andFilter(...clauses: (string | false | undefined)[]): string {
   return clauses.filter(Boolean).map((c) => `(${c})`).join(' && ')
@@ -190,7 +190,7 @@ export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string
             <TH sortable sorted={sortedOf('country')} onClick={() => toggleSort('country')} className="w-[140px] min-w-[140px]">Country</TH>
             <TH sortable sorted={sortedOf('status')} onClick={() => toggleSort('status')}>Status</TH>
             <TH className="text-right">Clubs</TH>
-            <TH>Website</TH>
+            <TH sortable sorted={sortedOf('website_url')} onClick={() => toggleSort('website_url')}>Website</TH>
             <TH className="text-right">Actions</TH>
           </TR>
         </THead>
