@@ -151,7 +151,53 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > (`/app/api/v1/...` returns `{"message":"The route … could not be found."}`) — real route still
 > unknown; classic `profixio.com/fx/` is tournament-invitation pages, not a clean registry.
 >
-> _Last updated: 2026-06-07 (round 5 — SVK done)._
+> > **Phase 3 round 6 (2026-06-07) — Apify Puppeteer approved; NOR + UKR + ALB cracked.**
+> Used the approved Apify actor **`puppeteer-scraper` (`YJCnS9qogi9XxDgLB`)** for *recon only*
+> (capture live XHRs / render nav), then built keyless deterministic extractors.
+> - **NOR 0→311 clubs.** `volleyball.no/klubboversikt` embeds the NIF **MinIdrett** registry
+>   (`minidrett.no/idrettslag`). Real API: **`restdistribution.nif.no/api/v1/ClubSearch`** (POST
+>   `{ClubName:'',RegionId:0,ActivityId:38,PageSize:100,Index:N}`; ActivityId **38 = Volleyball**;
+>   keyless; paginated; Count=311). Returns name/city/zip/LocalCouncil — **no email/website**
+>   (those via Resolve + site-scrape later). `ClubDetails` needs auth (401). Swagger:
+>   `restdistribution.nif.no/swagger/docs/v1`. Built **`extract-clubs-nif`** (`zA8cUjhYy1469qHl` |
+>   `/webhook/extract-clubs-nif`), dedup `NOR:<OrgId>`.
+> - **UKR 0→275 clubs + ALB 0→25 clubs** via a new **reusable DataProject extractor**
+>   **`extract-clubs-dataproject`** (`x0JKgaz4Y2lOSLc9` | `/webhook/extract-clubs-dataproject`).
+>   DataProject team pages (`<host>.dataproject.com/CompetitionTeamSearch.aspx?ID=<comp>`) carry
+>   each club as a logo `<img title="NAME" ... TeamLogo_<TeamID>.jpg>` in **static** HTML (UTF-8,
+>   no browser needed). Parse title+TeamID, dedup `<FEDCODE>:<TeamID>`, iterate competition IDs.
+>   PROFILES baked in: **UKR** (`uvf-web`, comps 162-182) + **ALB** (`fshv-web`, comps
+>   108/114/115/116/117/122). Override via body `{id,fedcode,dpHost,country,comps:[...]}`.
+>   Name-only records (no city/website/contacts yet). **DataProject is used by many feds — reuse
+>   for any other CEV/AVC fed whose results live on `*.dataproject.com`.**
+> **DB now ~9,220 clubs / 4,564 contacts.**
+> **Zero set down to 4 (all marginal):** CYP (`volleyball.org.cy` **compromised** — SEO-spam
+> defacement, no club table; need alt domain), GIB (no website/directory — mark resolved-no-source),
+> LAT (`volejbols.lv/komandas` ~15 league rosters, name+coach only, low value), MON (Monaco, ~1-2
+> clubs). All low ROI — pursue only on request.
+> **Still deferred:** SUI full roster (behind authenticated `api.volleyball.ch/indoor/clubs`),
+> SWE full roster (Profixio, email-less, browser-only). Both off-zero (partial). Next enrichment
+> step for NOR/UKR/ALB name-only clubs: run Resolve (website) + site-scrape (contacts).
+>
+> _Last updated: 2026-06-07 (round 6 — NOR/UKR/ALB done; DataProject extractor reusable)._
+
+> **Phase 2.6 — resolve-time website enrichment (2026-06-07):** Reworked the `enrich-club`
+> resolve (`jOeufPcBBIWrij7M`, **deployed live + export in sync**). New `clubs` fields (migration
+> `1780655300_clubs_enrichment.js`, **not yet deployed to prod** — PB silently drops them on PATCH
+> until next deploy; workflow is forward-compatible): `website_emails` (json hint), `contact_url`,
+> `section_url`, `socials` (json), `site_lang`. Changes: **(A)** harvest emails/contact-link/
+> socials/lang from the already-fetched homepage ($0); **(B)** keep canonical root URL + www/http
+> probe + `section_url` for deep/volleyball-section links; **(C)** next-best-result fallback across
+> the Serper pool when the LLM pick is a hard miss; **(D)** added **Serper Search 2** (broader
+> query, no "volleyball") feeding the fallback pool only (Pick still sees the volleyball query →
+> precision kept); **recheck** now re-harvests already-resolved clubs. Smoke-tested on BG clubs:
+> resolved A + emails/socials/lang harvested, contact_url correct, section_url empty for dedicated
+> clubs (correct). Spec: `specs/club-website-enrichment.md`.
+> **Overlap decision:** Resolve = cheap producer; the Phase-5 club-site scraper stays the
+> authoritative email/contact extractor and should **consume `contact_url`/`section_url`** (wiring
+> into `site-scrape-club` is the remaining Phase-5 step — see `club-site-contact-scraper.md`).
+> **Next:** deploy the migration; then drive the Clubs-page batch with `recheck=true` over
+> `website_status='live'` to backfill enrichment on the existing clubs (log email + A/B/C counts).
 
 ## Where things stand
 
@@ -179,6 +225,8 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
   - Extract clubs (searchkit/SUI) `zGJj5ZTSGfK0iAJ4` | `/webhook/extract-clubs-sui`
   - Extract clubs (FFVB/FRA) `Vz1NsAbq4JWzwZr8` | `/webhook/extract-clubs-ffvb`
   - Extract clubs (Nevobo/NED) `42Ur1JEWgaQkDZ0a` | `/webhook/extract-clubs-nevobo`
+  - Extract clubs (NIF/NOR) `zA8cUjhYy1469qHl` | `/webhook/extract-clubs-nif`
+  - Extract clubs (DataProject/UKR,ALB,…) `x0JKgaz4Y2lOSLc9` | `/webhook/extract-clubs-dataproject`
 - Trigger an extractor: `POST {webhook} {"id":"<fedId>"}` (optionally `"url":"<dir>"` to force one dir).
 - **Exports under `n8n/` are NOT auto-applied** — edit the export AND PUT to the live workflow
   (keep them in sync). Same for the contacts collection (migration committed + created via API).

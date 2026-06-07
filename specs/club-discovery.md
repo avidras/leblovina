@@ -140,6 +140,14 @@ the cost to gate.
    `manual` are graded `A` by provenance without a check. See
    [`club-website-belongs-check.md`](./club-website-belongs-check.md).
 
+4. **Enrichment** (resolve-time, $0 on the already-fetched page) — harvest directional signals
+   for Phase-3 contact extraction: emails (`website_emails`, a non-authoritative hint),
+   `contact_url`, `section_url` (multisport volleyball page), `socials`, `site_lang`. Also
+   improves URL quality: www/http canonicalization, **next-best-result fallback** across the
+   Serper pool, and a broader **requery without "volleyball"** for multisport clubs. A `recheck`
+   batch re-harvests already-resolved clubs. The club-site scraper consumes `contact_url`/
+   `section_url`. See [`club-website-enrichment.md`](./club-website-enrichment.md).
+
 ## `clubs` collection (migration)
 
 | field            | type     | notes |
@@ -154,6 +162,11 @@ the cost to gate.
 | website_status   | select   | `unknown / live / dead / not_found` (Stage 3 validate+resolve outcome) |
 | website_confidence | select | `unknown / A / B / C` — post-resolve "belongs to club?" check (serper URLs only). See [`club-website-belongs-check.md`](./club-website-belongs-check.md) |
 | club_type        | select   | `unknown / volleyball / multisport` — club-type tag from the post-resolve check (multisport = VB section of a multi-sport club, still a valid lead). See [`club-website-belongs-check.md`](./club-website-belongs-check.md) |
+| website_emails   | json     | emails harvested from the resolved homepage (array) — non-authoritative Phase-3 hint. See [`club-website-enrichment.md`](./club-website-enrichment.md) |
+| contact_url      | url      | best contact/impressum/about link on the resolved site (feeds the club-site scraper) |
+| section_url      | url      | volleyball-section / deep link distinct from the homepage root (multisport) |
+| socials          | json     | `{facebook,instagram,youtube,tiktok,twitter,linkedin}` from the resolved site (present keys only) |
+| site_lang        | text     | 2-letter language of the resolved page |
 | source_url       | url      | the directory page this club was scraped from (provenance) |
 | source_club_id   | text     | source's own id/code if any (Italy codice, PB id, …) |
 | dedup_key        | text     | **required, unique** — see decision 4 |

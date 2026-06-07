@@ -21,8 +21,24 @@ extracts legitimate contacts into `contacts` (`source_type='club_site'`, `unveri
 3. **Form-only clubs → skip** (email is required; domain rule #1). If no real email is on the
    site, store nothing and set the club `no_contacts` (revisit form-only in a later phase).
 
+## Consume Resolve's enrichment signals (producer → consumer)
+
+Resolve now harvests directional signals for free on every resolve (see
+[`club-website-enrichment.md`](./club-website-enrichment.md)). This scraper is the
+**authoritative** email/contact extractor; Resolve is the cheap producer. **Seed page
+discovery from these fields before generic crawling:**
+- `clubs.contact_url` — fetch first (the best contact/impressum page already found).
+- `clubs.section_url` — for multisport clubs, the volleyball-section page (target it, not the
+  generic club office).
+- `clubs.website_emails` — a **non-authoritative homepage hint**; use to corroborate, but this
+  scraper's de-noised `contacts` supersede it.
+
+(Status: the signals are produced & deployed; wiring `site-scrape-club` to read them is the
+remaining Phase-5 step.)
+
 ## How it works (per club)
-1. **Page discovery (targeted).** Fetch the homepage (plain HTTP first, browser UA). Find
+1. **Page discovery (targeted).** Start from `clubs.contact_url` / `clubs.section_url` when
+   present (above). Then fetch the homepage (plain HTTP first, browser UA) and find
    contact-relevant links — **multilingual**: `contact|kontakt|kontakti|contatti|contacto|
    contact-us|impressum|imprint|o-nas|onas|about|about-us|team|tym|vedeni|upravni-odbor|
    coaches|klub|verein|sobre|equipe|squadra|contatti` — plus footer/header `mailto:` and
