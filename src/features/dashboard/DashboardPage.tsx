@@ -124,7 +124,8 @@ export function DashboardPage({ onNavigate }: { onNavigate: (v: NavView) => void
         <p className="mt-4 text-xs leading-relaxed text-neutral-500">
           <span className="font-medium text-neutral-600">Behind the scenes:</span> the platform combines automated web
           search, a page-rendering engine that reads modern JavaScript-heavy sites, and AI models that understand and
-          classify each page — all run automatically on a schedule, so the data keeps growing without manual work.
+          classify each page. All of these steps are orchestrated by <span className="font-medium text-neutral-600">n8n</span>,
+          which runs and schedules the whole pipeline automatically — so the data keeps growing without manual work.
         </p>
       </section>
     </div>
