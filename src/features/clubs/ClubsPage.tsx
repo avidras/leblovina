@@ -268,7 +268,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
           <THead>
             <TR>
               <TH sortable sorted={sortedOf('name')} onClick={() => toggleSort('name')} className="w-[350px] min-w-[350px] max-w-[350px]">Club</TH>
-              <TH sortable sorted={sortedOf('country')} onClick={() => toggleSort('country')}>Country</TH>
+              <TH sortable sorted={sortedOf('country')} onClick={() => toggleSort('country')} className="w-[140px] min-w-[140px]">Country</TH>
               <TH sortable sorted={sortedOf('city')} onClick={() => toggleSort('city')}>City</TH>
               <TH>Website</TH>
               <TH>Web status</TH>

@@ -114,7 +114,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
           <THead>
             <TR>
               <TH sortable sorted={sortedOf('club')} onClick={() => toggleSort('club')}>Club</TH>
-              <TH sortable sorted={sortedOf('country')} onClick={() => toggleSort('country')}>Country</TH>
+              <TH sortable sorted={sortedOf('country')} onClick={() => toggleSort('country')} className="w-[140px] min-w-[140px]">Country</TH>
               <TH sortable sorted={sortedOf('email')} onClick={() => toggleSort('email')}>Email</TH>
               <TH sortable sorted={sortedOf('position')} onClick={() => toggleSort('position')}>Position</TH>
               <TH>Phone</TH>

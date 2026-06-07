@@ -154,7 +154,7 @@ export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string
           <TR>
             <TH sortable sorted={sortedOf('fivb_code')} onClick={() => toggleSort('fivb_code')}>Code</TH>
             <TH sortable sorted={sortedOf('name')} onClick={() => toggleSort('name')} className="min-w-[260px]">Federation</TH>
-            <TH sortable sorted={sortedOf('country')} onClick={() => toggleSort('country')}>Country</TH>
+            <TH sortable sorted={sortedOf('country')} onClick={() => toggleSort('country')} className="w-[140px] min-w-[140px]">Country</TH>
             <TH sortable sorted={sortedOf('status')} onClick={() => toggleSort('status')}>Status</TH>
             <TH className="text-right">Clubs</TH>
             <TH>Website</TH>
