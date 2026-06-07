@@ -13,6 +13,7 @@ import { Badge, statusTone } from '@/components/ui/badge'
 import { Tooltip } from '@/components/ui/tooltip'
 import { Dialog, DialogField } from '@/components/ui/dialog'
 import { useConfirm } from '@/components/ui/confirm'
+import { ActionsMenu } from '@/components/ui/menu'
 import { CountryLabel } from '@/components/ui/country'
 import { Pagination } from '@/components/ui/pagination'
 import { withFlag } from '@/lib/countries'
@@ -138,14 +139,19 @@ export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string
           ))}
         </Select>
         <span className="ml-auto text-sm text-neutral-500">{totalItems.toLocaleString()} federations{loading ? ' · loading…' : ''}</span>
-        <Tooltip
-          side="bottom"
-          content="Batch-process every federation in the current filter through discover → gate → extract, in the background (~1/min). Spends LLM/Firecrawl/Serper credits."
-        >
-          <Button size="sm" variant="outline" disabled={batchBusy || totalItems === 0} onClick={batchProcess}>
-            {batchBusy ? 'Queuing…' : `Process ${totalItems}`}
-          </Button>
-        </Tooltip>
+        <ActionsMenu
+          busy={batchBusy}
+          actions={[
+            {
+              key: 'process',
+              label: 'Process federations',
+              count: totalItems,
+              description: 'Discover → gate → extract every federation in the filter, in the background (~1/min). Spends LLM/Firecrawl/Serper credits.',
+              disabled: batchBusy || totalItems === 0,
+              onSelect: batchProcess,
+            },
+          ]}
+        />
       </div>
       {batchMsg && <div className="text-sm text-neutral-600">{batchMsg}</div>}
 

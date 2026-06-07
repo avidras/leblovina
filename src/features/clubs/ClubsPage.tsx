@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Badge, statusTone } from '@/components/ui/badge'
 import { Tooltip } from '@/components/ui/tooltip'
+import { ActionsMenu } from '@/components/ui/menu'
 import { Dialog, DialogField } from '@/components/ui/dialog'
 import { useConfirm } from '@/components/ui/confirm'
 import { CountryLabel } from '@/components/ui/country'
@@ -171,7 +172,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
     setEnrichBusy(false)
     setEnrichMsg(
       r.ok
-        ? 'Englishizing non-Latin club names — updates land live.'
+        ? 'Romanizing non-Latin club names — updates land live.'
         : `Failed: ${r.error || r.status}`,
     )
   }
@@ -216,46 +217,50 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
           ))}
         </Select>
         <span className="ml-auto text-sm text-neutral-500">{totalItems.toLocaleString()} clubs{loading ? ' · loading…' : ''}</span>
-        <Tooltip
-          side="bottom"
-          content="Resolve a website only for clubs in the current filter that were never resolved before (web status unknown). Serper + AI picks the club's own site. Runs in the background."
-        >
-          <Button size="sm" variant="outline" disabled={enrichBusy || unresolvedCount === 0} onClick={() => resolveWebsites('unresolved')}>
-            {enrichBusy ? 'Queuing…' : `Resolve unresolved (${unresolvedCount})`}
-          </Button>
-        </Tooltip>
-        <Tooltip
-          side="bottom"
-          content="Re-resolve EVERY club in the current filter (incl. already-resolved), re-picking the club's own site via Serper + AI — fixes wrong auto-picked sites. Directory/manual URLs are kept. Runs in the background."
-        >
-          <Button size="sm" variant="outline" disabled={enrichBusy || totalItems === 0} onClick={() => resolveWebsites('all')}>
-            {`Re-resolve all (${totalItems})`}
-          </Button>
-        </Tooltip>
-        <Tooltip
-          side="bottom"
-          content="Re-check whether each Serper-resolved live site actually belongs to the club (sets confidence A/B/C; C = review). No Serper spend — reuses the page already fetched. Runs in the background."
-        >
-          <Button size="sm" variant="outline" disabled={enrichBusy || recheckCount === 0} onClick={() => resolveWebsites('recheck')}>
-            {`Re-check confidence (${recheckCount})`}
-          </Button>
-        </Tooltip>
-        <Tooltip
-          side="bottom"
-          content="Harvest enrichment signals (emails, contact page, socials, language) from EVERY live site in the current filter — any source, incl. official-list/manual — and re-check confidence on serper ones. No Serper spend; reuses the page fetch. Runs in the background."
-        >
-          <Button size="sm" variant="outline" disabled={enrichBusy || harvestCount === 0} onClick={() => resolveWebsites('harvest')}>
-            {`Harvest all live (${harvestCount})`}
-          </Button>
-        </Tooltip>
-        <Tooltip
-          side="bottom"
-          content="Generate English/Latin names for every club whose name is in a non-Latin script (Cyrillic, Greek, CJK, Arabic, …) and doesn't have one yet. Romanizes proper nouns + lightly translates generic words. Idempotent; runs in the background."
-        >
-          <Button size="sm" variant="outline" disabled={enrichBusy} onClick={englishizeNames}>
-            Englishize names
-          </Button>
-        </Tooltip>
+        <ActionsMenu
+          busy={enrichBusy}
+          actions={[
+            {
+              key: 'unresolved',
+              label: 'Resolve unresolved',
+              count: unresolvedCount,
+              description: 'Never-resolved clubs in the filter; Serper + AI picks the club’s site. Background.',
+              disabled: enrichBusy || unresolvedCount === 0,
+              onSelect: () => resolveWebsites('unresolved'),
+            },
+            {
+              key: 'all',
+              label: 'Re-resolve all',
+              count: totalItems,
+              description: 'Re-pick every club’s site (incl. already-resolved); fixes wrong picks. Spends Serper/AI credits. Background.',
+              disabled: enrichBusy || totalItems === 0,
+              onSelect: () => resolveWebsites('all'),
+            },
+            {
+              key: 'recheck',
+              label: 'Re-check confidence',
+              count: recheckCount,
+              description: 'Re-score serper live sites (A/B/C; C = review). No Serper spend — reuses the page fetch. Background.',
+              disabled: enrichBusy || recheckCount === 0,
+              onSelect: () => resolveWebsites('recheck'),
+            },
+            {
+              key: 'harvest',
+              label: 'Harvest all live',
+              count: harvestCount,
+              description: 'Harvest emails/contact/socials/language from every live site, any source. No Serper spend. Background.',
+              disabled: enrichBusy || harvestCount === 0,
+              onSelect: () => resolveWebsites('harvest'),
+            },
+            {
+              key: 'romanize',
+              label: 'Romanize names',
+              description: 'Latin/English names for clubs in non-Latin scripts that lack one. Idempotent. Background.',
+              disabled: enrichBusy,
+              onSelect: englishizeNames,
+            },
+          ]}
+        />
       </div>
       {enrichMsg && <div className="text-sm text-neutral-600">{enrichMsg}</div>}
 
