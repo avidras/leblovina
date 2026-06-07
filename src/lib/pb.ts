@@ -70,6 +70,11 @@ export interface Club {
   id: string
   federation: string
   name: string
+  // English/Latin rendering of a non-Latin `name` (romanize + light translate),
+  // set by the englishize-clubs workflow. Empty for Latin-script names. UI shows
+  // it as primary when present; export's Club column = name_en || name.
+  // See specs/club-name-englishization.md.
+  name_en: string
   country: string
   region: string
   city: string

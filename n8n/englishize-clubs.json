@@ -1,0 +1,131 @@
+{
+  "name": "Leblovina — Englishize club names",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "englishize-clubs", "responseMode": "onReceived", "options": {} },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-700, 0],
+      "webhookId": "englishize-clubs"
+    },
+    {
+      "parameters": {
+        "assignments": { "assignments": [
+          { "id": "p", "name": "pbUrl", "value": "https://leblovina.tools.biceps.digital", "type": "string" }
+        ] },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-540, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-380, 0],
+      "credentials": { "httpCustomAuth": { "id": "hzdBwrAqrPZjDmME", "name": "PocketBase admin (api)" } }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst body=($('Webhook').first().json.body)||{};\nconst ids=Array.isArray(body.ids)?new Set(body.ids):null;\nconst NONLATIN=/[\\u0370-\\u03FF\\u0400-\\u052F\\u0530-\\u058F\\u0590-\\u05FF\\u0600-\\u06FF\\u0700-\\u07FF\\u0900-\\u097F\\u0E00-\\u0E7F\\u1100-\\u11FF\\u3040-\\u30FF\\u3400-\\u9FFF\\uAC00-\\uD7AF\\uF900-\\uFAFF]/;\nconst need=[]; let page=1;\nwhile(true){\n  const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:'name_en=\"\"',perPage:500,page,fields:'id,name,name_en'},headers:pbH,json:true});\n  for(const c of (r.items||[])){ if(ids&&!ids.has(c.id))continue; if(c.name&&NONLATIN.test(c.name)) need.push({id:c.id,name:c.name}); }\n  if(page>=(r.totalPages||1))break; page++;\n}\nconst out=[]; for(let i=0;i<need.length;i+=50){ out.push({json:{batch:need.slice(i,i+50)}}); }\nif(!out.length) return [{json:{batch:[],empty:true}}];\nreturn out;\n"
+      },
+      "id": "collect",
+      "name": "Collect",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-220, 0]
+    },
+    {
+      "parameters": { "batchSize": 1, "options": {} },
+      "id": "loop",
+      "name": "Loop",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [-40, 0]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify(($json.batch||[]).map((b,i)=>({i,name:b.name}))) }}",
+        "options": {
+          "systemMessage": "You convert volleyball club names written in NON-LATIN scripts into a concise English/Latin rendering. Input is a JSON array of {i, name}. For EACH item, produce name_en: (1) TRANSLITERATE proper nouns (place names, person names, the club's identity) to standard English romanization; (2) TRANSLATE only fully spelled-out generic descriptors to English ('волейбольний клуб'→'Volleyball Club', 'жіночий'→\"Women's\", region/oblast words, youth/junior); (3) keep abbreviations and multi-letter acronyms TRANSLITERATED, not expanded (ВК→VC, СК→SC, ДЮСШ→DYuSSh, ШВСМ→ShVSM, СДЮШОР→SDYuShOR). Preserve the club's distinct name — do NOT invent or embellish; when unsure, transliterate faithfully. Keep it CONCISE — no parentheticals, no notes, no expanding acronyms into long phrases. Return ONLY a JSON array - no prose, no code fences - of shape [{\"i\":number,\"name_en\":string}] with one entry per input item."
+        }
+      },
+      "id": "agent",
+      "name": "Englishize",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [180, 120],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": { "modelName": "models/gemini-2.5-flash", "options": {} },
+      "id": "gmodel",
+      "name": "Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [180, 320],
+      "credentials": { "googlePalmApi": { "id": "bk0TwlDz0lEZUfic", "name": "Gemini (leblovina)" } }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst batch=(($('Loop').item)||{}).json && $('Loop').item.json.batch || [];\nlet out=$json.output; if(out&&typeof out!=='string'&&out.text)out=out.text; out=String(out||'');\nlet arr=[];\ntry{arr=JSON.parse(out);}catch(e){const m=out.match(/\\[[\\s\\S]*\\]/); if(m){try{arr=JSON.parse(m[0]);}catch(_){ arr=[]; }}}\nif(!Array.isArray(arr)) arr=[];\nlet written=0;\nfor(const r of arr){ const idx=(r&&typeof r.i==='number')?r.i:-1; const item=batch[idx]; if(!item)continue; const ne=String((r&&r.name_en)||'').trim(); if(!ne||ne===item.name)continue; try{await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/clubs/records/'+item.id,headers:pbH,body:{name_en:ne},json:true});written++;}catch(e){} }\nreturn [{json:{batchSize:batch.length,written}}];\n"
+      },
+      "id": "write",
+      "name": "Write name_en",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 120],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return [{json:{ok:true}}];\n"
+      },
+      "id": "fin",
+      "name": "Finalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [180, -140]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "PB Auth", "type": "main", "index": 0 }]] },
+    "PB Auth": { "main": [[{ "node": "Collect", "type": "main", "index": 0 }]] },
+    "Collect": { "main": [[{ "node": "Loop", "type": "main", "index": 0 }]] },
+    "Loop": { "main": [
+      [{ "node": "Finalize", "type": "main", "index": 0 }],
+      [{ "node": "Englishize", "type": "main", "index": 0 }]
+    ] },
+    "Englishize": { "main": [[{ "node": "Write name_en", "type": "main", "index": 0 }]] },
+    "Gemini Chat Model": { "ai_languageModel": [[{ "node": "Englishize", "type": "ai_languageModel", "index": 0 }]] },
+    "Write name_en": { "main": [[{ "node": "Loop", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false,
+  "pinData": {},
+  "meta": { "templateId": "leblovina-englishize-clubs" }
+}

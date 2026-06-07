@@ -5,6 +5,7 @@ const DISCOVER_CLUBS_URL = import.meta.env.VITE_N8N_DISCOVER_CLUBS_URL as string
 const BATCH_PROCESS_URL = import.meta.env.VITE_N8N_BATCH_PROCESS_URL as string | undefined
 const EXTRACT_CLUBS_URL = import.meta.env.VITE_N8N_EXTRACT_CLUBS_URL as string | undefined
 const BATCH_ENRICH_URL = import.meta.env.VITE_N8N_BATCH_ENRICH_URL as string | undefined
+const ENGLISHIZE_CLUBS_URL = import.meta.env.VITE_N8N_ENGLISHIZE_CLUBS_URL as string | undefined
 
 export interface TriggerResult {
   ok: boolean
@@ -78,4 +79,14 @@ export async function triggerBatchEnrich(
     return { ok: false, status: 0, error: 'VITE_N8N_BATCH_ENRICH_URL is not set' }
   }
   return postWebhook(BATCH_ENRICH_URL, { ids, force, recheck })
+}
+
+// Generate English/Latin names for clubs whose name is in a non-Latin script
+// (async, background). Omit `ids` to process all clubs still missing an English
+// name; pass `ids` to scope it. Idempotent. See specs/club-name-englishization.md.
+export async function triggerEnglishizeClubs(ids?: string[]): Promise<TriggerResult> {
+  if (!ENGLISHIZE_CLUBS_URL) {
+    return { ok: false, status: 0, error: 'VITE_N8N_ENGLISHIZE_CLUBS_URL is not set' }
+  }
+  return postWebhook(ENGLISHIZE_CLUBS_URL, ids && ids.length ? { ids } : {})
 }

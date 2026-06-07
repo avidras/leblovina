@@ -4,7 +4,7 @@ import { usePagedCollection } from '@/hooks/usePagedCollection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useUrlState, clearUrlParam } from '@/hooks/useUrlState'
 import { useContactCountsByClub } from '@/hooks/useContactCounts'
-import { triggerBatchEnrich } from '@/lib/n8n'
+import { triggerBatchEnrich, triggerEnglishizeClubs } from '@/lib/n8n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -161,6 +161,20 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
     setEnrichMsg(r.ok ? `Queued ${ids.length} — updates land live.` : `Failed: ${r.error || r.status}`)
   }
 
+  // Generate English names for all clubs still missing one (non-Latin scripts only;
+  // gated server-side). Global maintenance op — not filter-scoped.
+  async function englishizeNames() {
+    setEnrichBusy(true)
+    setEnrichMsg(null)
+    const r = await triggerEnglishizeClubs()
+    setEnrichBusy(false)
+    setEnrichMsg(
+      r.ok
+        ? 'Englishizing non-Latin club names — updates land live.'
+        : `Failed: ${r.error || r.status}`,
+    )
+  }
+
   if (error) return <div className="p-6 text-sm text-red-600">Failed to load clubs: {error}</div>
 
   return (
@@ -233,6 +247,14 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
             {`Harvest all live (${harvestCount})`}
           </Button>
         </Tooltip>
+        <Tooltip
+          side="bottom"
+          content="Generate English/Latin names for every club whose name is in a non-Latin script (Cyrillic, Greek, CJK, Arabic, …) and doesn't have one yet. Romanizes proper nouns + lightly translates generic words. Idempotent; runs in the background."
+        >
+          <Button size="sm" variant="outline" disabled={enrichBusy} onClick={englishizeNames}>
+            Englishize names
+          </Button>
+        </Tooltip>
       </div>
       {enrichMsg && <div className="text-sm text-neutral-600">{enrichMsg}</div>}
 
@@ -259,7 +281,12 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
           <TBody>
             {items.map((c) => (
               <TR key={c.id}>
-                <TD className="min-w-[220px] cursor-pointer font-medium hover:text-blue-600" onClick={() => setOpenId(c.id)}>{c.name}</TD>
+                <TD className="min-w-[220px] cursor-pointer hover:text-blue-600" onClick={() => setOpenId(c.id)}>
+                  <div className="font-medium">{c.name_en || c.name}</div>
+                  {c.name_en && c.name_en !== c.name && (
+                    <div className="text-xs text-neutral-500">{c.name}</div>
+                  )}
+                </TD>
                 <TD>
                   <CountryLabel country={c.country} />
                   {c.region && <div className="text-xs text-neutral-500">{c.region}</div>}
@@ -340,7 +367,12 @@ function ClubDetailDialog({
       header={
         club && (
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base font-semibold text-neutral-900">{club.name}</h2>
+            <h2 className="text-base font-semibold text-neutral-900">
+              {club.name_en || club.name}
+              {club.name_en && club.name_en !== club.name && (
+                <span className="ml-2 text-sm font-normal text-neutral-500">{club.name}</span>
+              )}
+            </h2>
             {club.status && <Badge tone={statusTone(club.status)}>{club.status}</Badge>}
             {club.website_confidence && club.website_confidence !== 'unknown' && (
               <Badge tone={confidenceTone(club.website_confidence)}>conf {club.website_confidence}</Badge>

@@ -180,6 +180,18 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > step for NOR/UKR/ALB name-only clubs: run Resolve (website) + site-scrape (contacts).
 >
 > _Last updated: 2026-06-07 (round 6 — NOR/UKR/ALB done; DataProject extractor reusable)._
+>
+> **Club name englishization (2026-06-07):** New `clubs.name_en` field (migration
+> `1780655400_clubs_name_en.js`, idempotent; also added live via API). Workflow
+> **`englishize-clubs`** (`tGRn12qBELAptDru` | `/webhook/englishize-clubs`, env
+> `VITE_N8N_ENGLISHIZE_CLUBS_URL`): finds clubs whose `name` is in a **non-Latin script**
+> (deterministic Unicode-range gate) and lacks `name_en`, batches 50→Gemini 2.5 Flash
+> (romanize proper nouns + light-translate generic descriptors, keep acronyms transliterated),
+> never-crash JSON parse, PATCHes `name_en`. Idempotent; re-run after each non-Latin fed.
+> UI: Club column is a two-line cell (romanized over native, like the Country column) +
+> "Englishize names" button. Export Club = `name_en || name`. Backfilled the existing non-Latin
+> backlog (UKR/RUS/BUL/SRB/GRE Cyrillic+Greek). Also fixed the DataProject extractor to
+> HTML-decode names (`&quot;`). Spec: `specs/club-name-englishization.md`.
 
 > **Phase 2.6 — resolve-time website enrichment (2026-06-07):** Reworked the `enrich-club`
 > resolve (`jOeufPcBBIWrij7M`, **deployed live + export in sync**). New `clubs` fields (migration
