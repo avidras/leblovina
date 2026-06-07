@@ -58,8 +58,12 @@ group on the dashboard). Search-discovered clubs set `federation` = this record.
 ### `clubs` reuse
 - `website_source` gains a value **`search`** (enum update: migration + `pb.ts` `WebsiteSource`).
 - New club: `{ federation: GGL, name, country, city, website_url, website_source:'search',
-  website_status:'live', website_confidence:'B' (review), status:'needs_review',
-  dedup_key:'search:<host>' }`. (`B`, not `A` — search-sourced is lower-trust pending review.)
+  website_status:'live', website_confidence:'A', club_type:'volleyball'|'multisport',
+  status:'needs_review', dedup_key:'search:<host>' }`. **Confidence `A`** — the strict classifier
+  only accepts a confirmed single real volleyball-club's own site (anything ambiguous is rejected),
+  so an accepted match is trusted, not merely probable. `club_type` comes from the classifier
+  (volleyball vs a multi-sport club with a volleyball section). `status='needs_review'` is the
+  human-vetting gate (orthogonal to confidence).
 
 ## Workflows (n8n) — as built
 

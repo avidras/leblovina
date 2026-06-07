@@ -231,7 +231,7 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 >   makes localized club queries → upsert pending rows)
 > - `search-keyword-process` `XEHgcX4lPg7KRY8M` | `/webhook/search-keyword-process` (Serper →
 >   blocklist + strict deterministic pre-screen → strict Haiku club-classifier → URL-host dedup
->   vs ALL clubs → create under GGL `website_source='search'`/`B`/`needs_review`,
+>   vs ALL clubs → create under GGL `website_source='search'`/`A`/detected `club_type`/`needs_review`,
 >   `dedup_key='search:<host>'` → enqueue into existing `scrape_queue` → write back counts)
 > - `search-discover-drain` (cron, every 2 min) `x4g5G7jbI5wO11Eu` (gated by the settings flag;
 >   backpressure on `searching`; stale-retry; dispatches the processor)
