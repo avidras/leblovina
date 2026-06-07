@@ -17,6 +17,7 @@ import { ActionsMenu } from '@/components/ui/menu'
 import { CountryLabel } from '@/components/ui/country'
 import { Pagination } from '@/components/ui/pagination'
 import { withFlag } from '@/lib/countries'
+import { downloadCsv } from '@/lib/csv'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
 // `clubs` is no longer sortable server-side (it's an aggregate, not a column);
@@ -120,6 +121,21 @@ export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string
     )
   }
 
+  // Export the CURRENT filtered view (all rows), all columns, as CSV.
+  async function exportCsv() {
+    setBatchBusy(true)
+    setBatchMsg('Preparing export…')
+    try {
+      const rows = await pb.collection('federations').getFullList<Federation>({ filter: filter || undefined, sort: sortStr, batch: 500 })
+      const cols = ['fivb_code', 'name', 'country', 'confederation', 'status', 'club_directory_url', 'website_url', 'email', 'phone', 'president', 'general_secretary', 'extraction_method', 'last_scraped', 'source_url', 'notes']
+      downloadCsv(`federations-${new Date().toISOString().slice(0, 10)}.csv`, rows as unknown as Record<string, unknown>[], cols)
+      setBatchMsg(`Exported ${rows.length} federation(s).`)
+    } catch (e) {
+      setBatchMsg(`Export failed: ${(e as Error).message}`)
+    }
+    setBatchBusy(false)
+  }
+
   if (error) return <div className="p-6 text-sm text-red-600">Failed to load federations: {error}</div>
 
   return (
@@ -149,6 +165,14 @@ export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string
               description: 'Searches for each federation’s club directory and extracts its clubs. Uses LLM, Firecrawl & Serper.',
               disabled: batchBusy || totalItems === 0,
               onSelect: batchProcess,
+            },
+            {
+              key: 'export',
+              label: 'Export CSV (filtered)',
+              count: totalItems,
+              description: 'Download every federation in the current filter (all rows, all columns) as a CSV.',
+              disabled: batchBusy || totalItems === 0,
+              onSelect: exportCsv,
             },
           ]}
         />

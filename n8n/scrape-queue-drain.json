@@ -1,0 +1,64 @@
+{
+  "name": "Leblovina — Scrape queue drain (cron)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [ { "field": "minutes", "minutesInterval": 2 } ] }
+      },
+      "id": "cron",
+      "name": "Every 2 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-600, 0]
+    },
+    {
+      "parameters": {
+        "assignments": { "assignments": [
+          { "id": "p", "name": "pbUrl", "value": "https://leblovina.tools.biceps.digital", "type": "string" }
+        ] },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-440, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-280, 0],
+      "credentials": { "httpCustomAuth": { "id": "hzdBwrAqrPZjDmME", "name": "PocketBase admin (api)" } }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst GET=(coll,qs)=>this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/'+coll+'/records',qs,headers:pbH,json:true});\nconst PATCH=(coll,id,b)=>this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/'+coll+'/records/'+id,headers:pbH,body:b,json:true});\n// 1) control flag (Pause)\nconst sres=await GET('settings',{filter:\"key='scrape_drain'\",perPage:1});\nconst cfg=((sres.items&&sres.items[0])||{}).value||{};\nif(cfg.enabled!==true) return [{json:{paused:true}}];\nconst cap=Number(cfg.batch_size||15); const staleMs=Number(cfg.stale_minutes||10)*60000;\nconst now=Date.now();\n// 2) reconcile processing -> done (club has scrape_note) / stale -> error\nconst proc=await GET('scrape_queue',{filter:\"status='processing'\",expand:'club',perPage:200});\nlet inflight=0, done=0, errored=0;\nfor(const row of (proc.items||[])){\n  const club=row.expand&&row.expand.club;\n  const ls=(club&&club.last_scraped)?Date.parse(club.last_scraped):0;\n  const ps=row.processed_at?Date.parse(row.processed_at):0;\n  // done = the club was (re)scraped AFTER we dispatched it (works for force re-runs too,\n  // where a stale scrape_note/last_scraped already existed before dispatch).\n  if(ls && ps && ls>=ps){ try{await PATCH('scrape_queue',row.id,{status:'done'});}catch(_){}; done++; continue; }\n  if(ps && (now-ps)>staleMs){ try{await PATCH('scrape_queue',row.id,{status:'error'});}catch(_){}; errored++; continue; }\n  inflight++;\n}\n// 3) backpressure: only top up to the cap\nconst slots=Math.max(0,cap-inflight);\nlet fired=0;\nif(slots>0){\n  const q=await GET('scrape_queue',{filter:\"status='queued'\",sort:'enqueued_at',perPage:slots,expand:'club'});\n  const nowIso=new Date().toISOString();\n  for(const row of (q.items||[])){\n    const clubId=(row.expand&&row.expand.club&&row.expand.club.id)||row.club;\n    try{ await PATCH('scrape_queue',row.id,{status:'processing',processed_at:nowIso,attempts:(row.attempts||0)+1}); }catch(e){ continue; }\n    try{ await this.helpers.httpRequest({method:'POST',url:'https://n8n-2.biceps.digital/webhook/site-scrape-club-v2',headers:{'Content-Type':'application/json'},body:{id:clubId,force:!!row.force},json:true,timeout:15000}); }catch(e){}\n    fired++;\n  }\n}\nreturn [{json:{inflight,slots,fired,reconciled_done:done,errored}}];\n"
+      },
+      "id": "drain",
+      "name": "Drain",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-100, 0]
+    }
+  ],
+  "connections": {
+    "Every 2 min": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "PB Auth", "type": "main", "index": 0 }]] },
+    "PB Auth": { "main": [[{ "node": "Drain", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false,
+  "pinData": {},
+  "meta": { "templateId": "leblovina-scrape-queue-drain" }
+}

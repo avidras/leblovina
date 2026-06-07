@@ -1,0 +1,63 @@
+{
+  "name": "Leblovina — Scrape enqueue",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "scrape-enqueue", "responseMode": "lastNode", "options": {} },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-600, 0],
+      "webhookId": "scrape-enqueue"
+    },
+    {
+      "parameters": {
+        "assignments": { "assignments": [
+          { "id": "p", "name": "pbUrl", "value": "https://leblovina.tools.biceps.digital", "type": "string" }
+        ] },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-440, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-280, 0],
+      "credentials": { "httpCustomAuth": { "id": "hzdBwrAqrPZjDmME", "name": "PocketBase admin (api)" } }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst body=($('Webhook').first().json.body)||{};\nconst force = body.force === true;\n// Clear mode (UI 'Clear queue'): delete all still-queued rows (leaves processing/done).\nif(body.clear){ let cleared=0; while(true){ const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/scrape_queue/records',qs:{filter:\"status='queued'\",perPage:200,fields:'id'},headers:pbH,json:true}); const items=r.items||[]; if(!items.length)break; await Promise.all(items.map(it=>this.helpers.httpRequest({method:'DELETE',url:PB_URL+'/api/collections/scrape_queue/records/'+it.id,headers:pbH,json:true}).catch(()=>{}))); cleared+=items.length; if(items.length<200)break; } return [{json:{cleared}}]; }\nlet ids = [];\nif (Array.isArray(body.ids) && body.ids.length){ ids = body.ids.filter(Boolean); }\nelse if (body.filter){ let page=1; while(true){ const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:body.filter,perPage:500,page,fields:'id'},headers:pbH,json:true}); ids=ids.concat((r.items||[]).map(x=>x.id)); if(page>=(r.totalPages||1))break; page++; } }\nids=[...new Set(ids)];\nconst now=new Date().toISOString();\nconst findRow=async(club)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/scrape_queue/records',qs:{filter:'club=\"'+club+'\"',perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nlet created=0, requeued=0;\nconst upsert=async(club)=>{ try{ await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/scrape_queue/records',headers:pbH,body:{club,status:'queued',force,enqueued_at:now,attempts:0},json:true}); created++; }\n  catch(e){ try{ const ex=await findRow(club); if(ex){ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/scrape_queue/records/'+ex.id,headers:pbH,body:{status:'queued',force,enqueued_at:now},json:true}); requeued++; } }catch(_){}} };\nfor(let i=0;i<ids.length;i+=50){ await Promise.all(ids.slice(i,i+50).map(upsert)); }\nreturn [{json:{enqueued:created,requeued,total:ids.length}}];\n"
+      },
+      "id": "enq",
+      "name": "Enqueue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-100, 0]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "PB Auth", "type": "main", "index": 0 }]] },
+    "PB Auth": { "main": [[{ "node": "Enqueue", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false,
+  "pinData": {},
+  "meta": { "templateId": "leblovina-scrape-enqueue" }
+}

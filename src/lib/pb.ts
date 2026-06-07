@@ -114,6 +114,21 @@ export interface ScrapePage {
   updated: string
 }
 
+// Mirrors the `scrape_queue` collection — the site-scrape work queue drained by the
+// `scrape-queue-drain` cron. See specs/club-scrape-queue.md.
+export type ScrapeQueueStatus = 'queued' | 'processing' | 'done' | 'error'
+export interface ScrapeQueue {
+  id: string
+  club: string
+  status: ScrapeQueueStatus | ''
+  force: boolean
+  enqueued_at: string
+  processed_at: string
+  attempts: number
+  created: string
+  updated: string
+}
+
 export type VerificationStatus =
   | 'unverified' | 'mx_only' | 'verified' | 'catch_all' | 'undeliverable' | 'unknown'
 export const VERIFICATION_STATUSES: VerificationStatus[] = [

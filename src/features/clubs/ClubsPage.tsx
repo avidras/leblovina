@@ -5,7 +5,10 @@ import { usePagedCollection } from '@/hooks/usePagedCollection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useUrlState, clearUrlParam } from '@/hooks/useUrlState'
 import { useContactCountsByClub } from '@/hooks/useContactCounts'
-import { triggerBatchEnrich, triggerEnglishizeClubs, triggerSiteScrape } from '@/lib/n8n'
+import { triggerBatchEnrich, triggerEnglishizeClubs, triggerScrapeEnqueue } from '@/lib/n8n'
+import { relTime, exactTime } from '@/lib/time'
+import { useCountries } from '@/hooks/useCountries'
+import { downloadCsv } from '@/lib/csv'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -19,7 +22,7 @@ import { Pagination } from '@/components/ui/pagination'
 import { withFlag, countryFlag } from '@/lib/countries'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
-type SortKey = 'name' | 'country' | 'city' | 'status'
+type SortKey = 'name' | 'country' | 'city' | 'status' | 'last_scraped'
 
 // Combine filter clauses with AND, wrapping each clause so OR-groups stay scoped.
 function andFilter(...clauses: (string | false | undefined)[]): string {
@@ -39,7 +42,7 @@ function buildClubsFilter(f: {
     f.ws && (f.ws === 'unknown' ? "website_status = 'unknown' || website_status = ''" : pb.filter('website_status = {:v}', { v: f.ws })),
     f.wc && (f.wc === 'unknown' ? "website_confidence = 'unknown' || website_confidence = ''" : pb.filter('website_confidence = {:v}', { v: f.wc })),
     f.ct && (f.ct === 'unknown' ? "club_type = 'unknown' || club_type = ''" : pb.filter('club_type = {:v}', { v: f.ct })),
-    f.q && pb.filter('name ~ {:q} || country ~ {:q} || region ~ {:q} || city ~ {:q}', { q: f.q }),
+    f.q && pb.filter('name ~ {:q} || name_en ~ {:q} || country ~ {:q} || region ~ {:q} || city ~ {:q}', { q: f.q }),
   )
 }
 
@@ -76,6 +79,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
   const [enrichMsg, setEnrichMsg] = useState<string | null>(null)
   const [openId, setOpenId] = useState<string | null>(null)
   const { confirm, confirmElement } = useConfirm()
+  const countries = useCountries()
   const resetPage = () => setPage(1)
 
   const debouncedQ = useDebouncedValue(q, 300)
@@ -192,47 +196,53 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
 
   // Phase 5: crawl trusted (A/B) live club sites in the current filter for contacts
   // (multi-page; Apify/Gemini). C is excluded (wrong-club/aggregator). Writes to Contacts.
+  // Enqueue the current filter's scrape targets (trusted A/B sites + federation detail pages;
+  // C excluded). The n8n cron drains the queue in paced chunks — reliable at any scale. Contacts
+  // land live as each club is scraped. See specs/club-scrape-queue.md.
   async function scrapeSites() {
     if (scrapeCount === 0) return
     const ok = await confirm({
-      title: 'Scrape club sites for contacts',
-      message: `Crawl ${scrapeCount} club(s) in the current filter for contacts — trusted (A/B) websites + federation detail pages (multi-page; uses Apify/Gemini credits). Runs in the background.`,
-      confirmLabel: 'Run',
+      title: 'Queue club sites for scraping',
+      message: `Add ${scrapeCount} club(s) in the current filter to the scrape queue. A background drainer crawls them in paced chunks (multi-page; Apify/Gemini); contacts land live. You can pause or clear the queue anytime.`,
+      confirmLabel: 'Queue',
     })
     if (!ok) return
     setEnrichBusy(true)
     setEnrichMsg(null)
-    let ids: string[]
-    try {
-      const list = await pb.collection('clubs').getFullList<{ id: string }>({
-        filter: scrapeFilter || undefined, fields: 'id', batch: 500,
-      })
-      ids = list.map((c) => c.id)
-    } catch (e) {
-      setEnrichBusy(false)
-      setEnrichMsg(`Failed: ${(e as Error).message}`)
-      return
-    }
-    if (ids.length === 0) { setEnrichBusy(false); return }
-    const r = await triggerSiteScrape(ids)
+    const r = await triggerScrapeEnqueue({ filter: scrapeFilter || undefined })
     setEnrichBusy(false)
-    setEnrichMsg(r.ok ? `Scraping ${ids.length} site(s) — contacts land live.` : `Failed: ${r.error || r.status}`)
+    setEnrichMsg(r.ok ? `Queued ${scrapeCount} club(s) — draining in the background.` : `Failed: ${r.error || r.status}`)
   }
 
-  // Per-club full scrape (from the club detail dialog). force=true so it runs even for a
-  // low-confidence site the user explicitly picked. Uses website + federation detail page.
+  // Per-club scrape (from the detail dialog). force=true so it runs even for a low-confidence
+  // (C) site the user explicitly picked. Goes through the queue (scrapes within ~1 tick).
   async function scrapeOne(clubId: string) {
     const ok = await confirm({
       title: 'Scrape this club',
-      message: 'Crawl this club’s website and/or federation detail page for contacts (uses Apify/Gemini credits)? Runs in the background.',
-      confirmLabel: 'Run',
+      message: 'Queue this club for a site scrape (website + federation detail page; Apify/Gemini). It runs within ~1 drain tick; contacts land live.',
+      confirmLabel: 'Queue',
     })
     if (!ok) return
     setEnrichBusy(true)
     setEnrichMsg(null)
-    const r = await triggerSiteScrape([clubId], true)
+    const r = await triggerScrapeEnqueue({ ids: [clubId], force: true })
     setEnrichBusy(false)
-    setEnrichMsg(r.ok ? 'Scraping 1 club — contacts land live.' : `Failed: ${r.error || r.status}`)
+    setEnrichMsg(r.ok ? 'Queued 1 club — scrapes within ~1 tick.' : `Failed: ${r.error || r.status}`)
+  }
+
+  // Export the CURRENT filtered view (all rows, not just the page), all columns, as CSV.
+  async function exportCsv() {
+    setEnrichBusy(true)
+    setEnrichMsg('Preparing export…')
+    try {
+      const rows = await pb.collection('clubs').getFullList<Club>({ filter: filter || undefined, sort: sortStr, batch: 500 })
+      const cols = ['name_en', 'name', 'country', 'region', 'city', 'website_url', 'website_source', 'website_status', 'website_confidence', 'club_type', 'status', 'last_scraped', 'scrape_note', 'detail_url', 'source_url', 'source_club_id', 'dedup_key', 'notes', 'created']
+      downloadCsv(`clubs-${new Date().toISOString().slice(0, 10)}.csv`, rows as unknown as Record<string, unknown>[], cols)
+      setEnrichMsg(`Exported ${rows.length} club(s).`)
+    } catch (e) {
+      setEnrichMsg(`Export failed: ${(e as Error).message}`)
+    }
+    setEnrichBusy(false)
   }
 
   if (error) return <div className="p-6 text-sm text-red-600">Failed to load clubs: {error}</div>
@@ -251,6 +261,10 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
             <span aria-hidden className="text-neutral-400">✕</span>
           </button>
         )}
+        <Select value={country} onChange={(e) => { setCountry(e.target.value); if (!e.target.value) clearUrlParam('country'); resetPage() }} title="Filter by country">
+          <option value="">Any country</option>
+          {countries.map((c) => (<option key={c} value={c}>{c}</option>))}
+        </Select>
         <Select value={hasSite} onChange={(e) => { setHasSite(e.target.value); resetPage() }}>
           <option value="">Any website</option>
           <option value="yes">Has website</option>
@@ -325,10 +339,20 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
               disabled: enrichBusy,
               onSelect: englishizeNames,
             },
+            {
+              key: 'export',
+              label: 'Export CSV (filtered)',
+              count: totalItems,
+              description: 'Download every club in the current filter (all rows, all columns) as a CSV.',
+              disabled: enrichBusy || totalItems === 0,
+              onSelect: exportCsv,
+            },
           ]}
         />
       </div>
       {enrichMsg && <div className="text-sm text-neutral-600">{enrichMsg}</div>}
+
+      <ScrapeQueuePanel />
 
       {totalItems === 0 && !loading ? (
         <div className="rounded-lg border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-500">
@@ -347,7 +371,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
               <TH>Type</TH>
               <TH className="text-right">Contacts</TH>
               <TH sortable sorted={sortedOf('status')} onClick={() => toggleSort('status')}>Status</TH>
-              <TH>Last scrape</TH>
+              <TH sortable sorted={sortedOf('last_scraped')} onClick={() => toggleSort('last_scraped')}>Last scrape</TH>
             </TR>
           </THead>
           <TBody>
@@ -405,8 +429,11 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
                   ) : <span className="text-neutral-400">0</span>}
                 </TD>
                 <TD>{c.status ? <Badge tone={statusTone(c.status)}>{statusLabel(c.status)}</Badge> : '—'}</TD>
-                <TD className="max-w-[220px] truncate text-xs text-neutral-500" title={c.scrape_note || ''}>
-                  {c.scrape_note || '—'}
+                <TD
+                  className="whitespace-nowrap text-xs text-neutral-500"
+                  title={c.last_scraped ? `${exactTime(c.last_scraped)}${c.scrape_note ? ` — ${c.scrape_note}` : ''}` : (c.scrape_note || '')}
+                >
+                  {relTime(c.last_scraped)}
                 </TD>
               </TR>
             ))}
@@ -430,7 +457,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
   )
 }
 
-function ClubDetailDialog({
+export function ClubDetailDialog({
   club, contactCount, busy, onScrape, onClose, onOpenContacts,
 }: {
   club: Club | null
@@ -569,5 +596,81 @@ function ClubDetailDialog({
         </div>
       )}
     </Dialog>
+  )
+}
+
+// Live status + controls for the site-scrape queue (drained by the n8n cron). Shows counts and
+// Pause/Resume (writes settings.scrape_drain.enabled) + Clear. Hidden when the queue is idle and
+// running. See specs/club-scrape-queue.md.
+function ScrapeQueuePanel() {
+  const [counts, setCounts] = useState({ queued: 0, processing: 0, done: 0, error: 0 })
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [settingId, setSettingId] = useState('')
+  const [busy, setBusy] = useState(false)
+  const { confirm, confirmElement } = useConfirm()
+
+  async function refresh() {
+    try {
+      const statuses = ['queued', 'processing', 'done', 'error'] as const
+      const res = await Promise.all(
+        statuses.map((s) => pb.collection('scrape_queue').getList(1, 1, { filter: pb.filter('status = {:s}', { s }), fields: 'id' })),
+      )
+      setCounts({ queued: res[0].totalItems, processing: res[1].totalItems, done: res[2].totalItems, error: res[3].totalItems })
+    } catch { /* non-fatal */ }
+    try {
+      const rec = await pb.collection('settings').getFirstListItem(pb.filter('key = {:k}', { k: 'scrape_drain' }))
+      setSettingId(rec.id)
+      setEnabled(!!(rec.value as { enabled?: boolean })?.enabled)
+    } catch { /* non-fatal */ }
+  }
+  useEffect(() => {
+    refresh()
+    const t = setInterval(refresh, 15000)
+    return () => clearInterval(t)
+  }, [])
+
+  async function togglePause() {
+    if (!settingId || enabled === null) return
+    setBusy(true)
+    try {
+      const rec = await pb.collection('settings').getOne(settingId)
+      await pb.collection('settings').update(settingId, { value: { ...(rec.value as object), enabled: !enabled } })
+      setEnabled(!enabled)
+    } catch { /* non-fatal */ }
+    setBusy(false)
+  }
+  async function clearQueue() {
+    const ok = await confirm({
+      title: 'Clear scrape queue',
+      message: `Remove ${counts.queued} queued club(s) from the queue? Any in-progress scrapes finish.`,
+      confirmLabel: 'Clear',
+    })
+    if (!ok) return
+    setBusy(true)
+    await triggerScrapeEnqueue({ clear: true })
+    setBusy(false)
+    setTimeout(refresh, 1500)
+  }
+
+  // Keep the UI clean: only show when there's queue activity or it's paused.
+  if (counts.queued + counts.processing === 0 && enabled !== false) return <>{confirmElement}</>
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
+      <span className="font-medium text-neutral-700">Scrape queue</span>
+      <span className="tabular-nums text-neutral-500">
+        {counts.queued} queued · {counts.processing} running · {counts.done} done{counts.error ? ` · ${counts.error} error` : ''}
+      </span>
+      {enabled === false && <Badge tone="amber">Paused</Badge>}
+      <div className="ml-auto flex gap-2">
+        <Button size="sm" variant="outline" disabled={busy || enabled === null} onClick={togglePause}>
+          {enabled ? 'Pause' : 'Resume'}
+        </Button>
+        <Button size="sm" variant="outline" disabled={busy || counts.queued === 0} onClick={clearQueue}>
+          Clear
+        </Button>
+      </div>
+      {confirmElement}
+    </div>
   )
 }

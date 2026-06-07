@@ -6,6 +6,7 @@ const BATCH_PROCESS_URL = import.meta.env.VITE_N8N_BATCH_PROCESS_URL as string |
 const EXTRACT_CLUBS_URL = import.meta.env.VITE_N8N_EXTRACT_CLUBS_URL as string | undefined
 const BATCH_ENRICH_URL = import.meta.env.VITE_N8N_BATCH_ENRICH_URL as string | undefined
 const ENGLISHIZE_CLUBS_URL = import.meta.env.VITE_N8N_ENGLISHIZE_CLUBS_URL as string | undefined
+const SCRAPE_ENQUEUE_URL = import.meta.env.VITE_N8N_SCRAPE_ENQUEUE_URL as string | undefined
 const SITE_SCRAPE_URL = import.meta.env.VITE_N8N_SITE_SCRAPE_URL as string | undefined
 
 export interface TriggerResult {
@@ -103,4 +104,16 @@ export async function triggerSiteScrape(ids?: string[], force = false): Promise<
   // force=true scrapes even low-confidence (C) sites — used by the per-club action where the
   // user explicitly picked one club. Batch runs leave force off (C gated out).
   return postWebhook(SITE_SCRAPE_URL, ids && ids.length ? { ids, force } : { onlyNew: true })
+}
+
+// Site-scrape via the QUEUE (the reliable, at-scale path): enqueue clubs; the n8n cron
+// drains them in bounded chunks with backpressure. Pass `ids` or a PB `filter` to enqueue;
+// `clear:true` empties the queued backlog. See specs/club-scrape-queue.md.
+export async function triggerScrapeEnqueue(
+  opts: { ids?: string[]; filter?: string; force?: boolean; clear?: boolean },
+): Promise<TriggerResult> {
+  if (!SCRAPE_ENQUEUE_URL) {
+    return { ok: false, status: 0, error: 'VITE_N8N_SCRAPE_ENQUEUE_URL is not set' }
+  }
+  return postWebhook(SCRAPE_ENQUEUE_URL, opts)
 }
