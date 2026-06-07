@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { pb, GATE_MODES, type GateMode } from '@/lib/pb'
-import { getGateMode, setGateMode } from '@/lib/settings'
-import { gateModeLabel } from '@/lib/labels'
+import { pb } from '@/lib/pb'
 import { Login } from '@/components/Login'
 import { Button } from '@/components/ui/button'
-import { Select } from '@/components/ui/select'
+import { Tooltip } from '@/components/ui/tooltip'
 import { FederationsPage } from '@/features/federations/FederationsPage'
 import { ClubsPage } from '@/features/clubs/ClubsPage'
 import { ContactsPage } from '@/features/contacts/ContactsPage'
@@ -78,9 +76,12 @@ export default function App() {
             <NavButton active={view === 'contacts'} onClick={() => navigate('contacts')}>Contacts</NavButton>
           </nav>
           <div className="ml-auto flex items-center gap-3">
-            <GateSelector />
             <span className="text-xs text-neutral-500">{pb.authStore.record?.email}</span>
-            <Button variant="ghost" size="sm" onClick={() => pb.authStore.clear()}>Sign out</Button>
+            <Tooltip side="bottom" content="Sign out">
+              <Button variant="ghost" size="icon" aria-label="Sign out" onClick={() => pb.authStore.clear()}>
+                <SignOutIcon />
+              </Button>
+            </Tooltip>
           </div>
         </div>
       </header>
@@ -113,23 +114,12 @@ function NavButton({ active, onClick, children }: { active: boolean; onClick: ()
   )
 }
 
-function GateSelector() {
-  const [mode, setMode] = useState<GateMode | ''>('')
-  useEffect(() => {
-    getGateMode().then(setMode)
-  }, [])
-  async function change(next: GateMode) {
-    setMode(next)
-    await setGateMode(next)
-  }
+function SignOutIcon() {
   return (
-    <label className="flex items-center gap-1.5 text-xs text-neutral-500">
-      Gate
-      <Select value={mode} onChange={(e) => change(e.target.value as GateMode)} className="h-8 text-xs" disabled={mode === ''}>
-        {GATE_MODES.map((m) => (
-          <option key={m} value={m}>{gateModeLabel(m)}</option>
-        ))}
-      </Select>
-    </label>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="m16 17 5-5-5-5" />
+      <path d="M21 12H9" />
+    </svg>
   )
 }
