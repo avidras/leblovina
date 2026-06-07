@@ -80,6 +80,53 @@ site-scrape-club` (webhook): homepage fetch → discover candidate links → fet
 (Apify-escalate if needed) → Gemini extract+de-noise → upsert contacts → set club status.
 Reuses the Anthropic/Gemini + PB-admin + Apify creds.
 
+### Worker improvements (resolver-aware) — A–G
+
+The worker (`site-scrape-club`) now exploits the resolver's signals on the club row instead of
+rediscovering everything:
+
+- **A — seed candidates from `contact_url` + `section_url`.** The resolver's best contact page is
+  used as a guaranteed candidate (ahead of the markdown/HTML keyword rediscovery), so the page
+  budget is spent on the best pages even when the homepage render misses the link.
+- **B — confidence gate.** The worker **skips `website_confidence='C'` clubs unless `force`**
+  (C is where wrong-club/aggregator URLs land — scraping them pollutes contacts). The UI scrape
+  action defaults its filter to **A/B** as the first line of defence; the worker guard is the
+  backstop.
+- **C — `website_emails` fallback.** Any deterministically-harvested homepage email not captured
+  by the LLM is still written (email-only contact), so a missed LLM extraction never loses real
+  emails / falsely marks `no_contacts`. (Domain rule #1 safe — extracted, not guessed.)
+- **D — multisport-aware.** For `club_type='multisport'`, `section_url` is prioritized and the
+  extractor is told to take **only the volleyball section's** contacts, not other departments.
+- **E — plain-HTTP-first, Firecrawl-escalation.** A `Fetch home` step pulls the homepage over
+  plain HTTP; an IF (`needsRender`) routes to **Firecrawl only when the plain fetch is empty/JS-
+  shell**. Most static club sites no longer cost a Firecrawl render. Graph:
+  `Get club → Fetch home → (needsRender?) → [Firecrawl home] → Crawl → Extract → Write`.
+- **F — page budget 2 → 4** candidate pages (seeded best-first).
+- **G — per-contact `source_url`.** Pages are fed with `=== URL ===` markers and the extractor
+  returns the `source` page per email; `Write` stores it (falls back to homepage). Provenance
+  per contact (domain rule #4).
+
+### H — federation detail pages (`detail_url`)
+
+Many clubs have a `detail_url` (the federation's per-club listing page) — **~2,056 clubs, of
+which ~1,062 have no website at all**. These pages carry the club's contact (email/phone/
+president). The scraper now uses them:
+- **No website → `detail_url` is the source** (unblocks the ~1,062 site-less clubs).
+- **Has website → also fetch `detail_url`** and merge it into the same extraction pass.
+- **De-noise:** the detail section is labelled `(FEDERATION DIRECTORY PAGE …)` and the extractor
+  is told to take **this club's** contact while **excluding the federation's own boilerplate**
+  emails (office@/press@/marketing@/website@/social@, typically on the federation's own domain).
+  (Sample `bvf.bg/club/138` exposes the club email `…@abv.bg` alongside ~6 `@bvf.bg` federation
+  addresses — only the former is wanted.)
+- **Provenance:** detail-page contacts are written `source_type='directory'` (federation
+  listing); website contacts stay `club_site` — decided per contact via the extractor's `source`
+  URL (host == the detail page's host ⇒ `directory`).
+- **Gate:** the C-confidence gate applies to *websites*; a `detail_url` is federation-provenance,
+  so a club is scraped whenever it has any usable source (A/B site **or** a detail page). The
+  deterministic `website_emails` fallback is website-only (not applied to detail pages — too
+  noisy with federation boilerplate; the LLM handles detail pages).
+- **UI:** "Full site scrape" includes every club with a `detail_url` (plus A/B live sites).
+
 ### Driver inputs / UI trigger
 `site-scrape-driver` webhook body:
 - `ids: string[]` — explicit club ids to scrape (used by the UI; scopes to exactly these).

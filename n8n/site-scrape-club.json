@@ -92,14 +92,14 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const club = $('Get club').first().json;\nconst home = (club.website_url||'').trim();\nconst hostOf=(u)=>String(u||'').replace(/^https?:\\/\\//i,'').replace(/^www\\./i,'').split(/[\\/?#]/)[0].toLowerCase();\nconst domain = hostOf(home);\nconst UA={'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36'};\nconst grab=async(u)=>{ try{ const r=await this.helpers.httpRequest({method:'GET',url:u,headers:UA,timeout:9000,returnFullResponse:true,ignoreHttpStatusErrors:true,followRedirect:true}); return String(r.body||''); }catch(e){ return ''; } };\nconst clean=(h)=>String(h||'')\n  .replace(/<script[\\s\\S]*?<\\/script>/gi,' ').replace(/<style[\\s\\S]*?<\\/style>/gi,' ')\n  .replace(/<a\\b[^>]*href=[\"']mailto:([^\"']+)[\"'][^>]*>([\\s\\S]*?)<\\/a>/gi,' $2 <$1> ')\n  .replace(/<\\/(div|li|tr|p|h[1-6]|td|section|article|header|footer)>/gi,'\\n').replace(/<br\\s*\\/?>/gi,'\\n')\n  .replace(/<[^>]+>/g,' ').replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&')\n  .replace(/[ \\t]+/g,' ').replace(/\\n[ \\t]*(\\n[ \\t]*)+/g,'\\n').trim();\nif(!home){ return [{json:{__skip:true,clubId:club.id}}]; }\nconst fc = $('Firecrawl home').first().json;\nconst md = (fc && fc.data && fc.data.markdown) || '';   // rendered (JS-capable)\nconst KW=/(contact|kontakt|kontakti|contatti|contacto|impressum|imprint|o-?nas|about|chi-siamo|sobre|team|tym|tiim|meeskond|squadra|equipe|equipo|staff|people|members|liikmed|coaches|treener|trener|trenari|treneri|juhatus|vorstand|zarzad|verein|mannschaft|vedeni)/i;\nconst re=/\\[([^\\]]*)\\]\\(([^)\\s]+)\\)/g; let m; const links=[];\nwhile((m=re.exec(md))){ let txt=m[1]||'', h=m[2]||''; if(/^(mailto:|tel:)/i.test(h)) continue; if(!KW.test(h)&&!KW.test(txt)) continue;\n  let abs; if(/^https?:\\/\\//i.test(h)) abs=h; else if(h.startsWith('/')) abs='https://'+domain+h.split('#')[0]; else continue;\n  if(hostOf(abs)===domain && links.indexOf(abs)<0) links.push(abs); }\nconst cands=links.slice(0,2);\nlet combined='CLUB DOMAIN: '+domain+'\\nURL: '+home+'\\n'+md.slice(0,40000);\nfor(const c of cands){ const t=await grab(c); if(t) combined+='\\n\\n=== '+c+' ===\\n'+clean(t).slice(0,15000); }\nreturn [{json:{clubId:club.id, name:club.name||'', domain, home, candidates:cands, combined, fetched: md.length>0}}];\n"
+        "jsCode": "const club = $('Get club').first().json;\nconst fh = $('Fetch home').first().json;\nconst home = (club.website_url||'').trim();\nconst detail = (club.detail_url||'').trim();\nconst hostOf=(u)=>String(u||'').replace(/^https?:\\/\\//i,'').replace(/^www\\./i,'').split(/[\\/?#]/)[0].toLowerCase();\nconst domain = hostOf(home);\nconst detailHost = hostOf(detail);\nconst force = !!(($('Webhook').first().json.body)||{}).force;\nconst multisport = String(club.club_type||'')==='multisport';\nconst cConf = String(club.website_confidence||'');\n// B: a website is usable unless it's low-confidence (C) and not forced. A detail_url is\n// federation-provenance, always usable. Need at least one usable source.\nconst useSite = !!home && !(cConf==='C' && !force);\nif(!useSite && !detail){ return [{json:{__skip:true, skipReason: home?'low_confidence':'no_source', clubId:club.id, domain}}]; }\n\nconst UA={'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36'};\nconst grab=async(u)=>{ try{ const r=await this.helpers.httpRequest({method:'GET',url:u,headers:UA,timeout:9000,returnFullResponse:true,ignoreHttpStatusErrors:true,followRedirect:true}); return String(r.body||''); }catch(e){ return ''; } };\nconst clean=(h)=>String(h||'')\n  .replace(/<script[\\s\\S]*?<\\/script>/gi,' ').replace(/<style[\\s\\S]*?<\\/style>/gi,' ')\n  .replace(/<a\\b[^>]*href=[\"']mailto:([^\"']+)[\"'][^>]*>([\\s\\S]*?)<\\/a>/gi,' $2 <$1> ')\n  .replace(/<\\/(div|li|tr|p|h[1-6]|td|section|article|header|footer)>/gi,'\\n').replace(/<br\\s*\\/?>/gi,'\\n')\n  .replace(/<[^>]+>/g,' ').replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&')\n  .replace(/[ \\t]+/g,' ').replace(/\\n[ \\t]*(\\n[ \\t]*)+/g,'\\n').trim();\n\nconst KW=/(contact|kontakt|kontakti|contatti|contacto|impressum|imprint|o-?nas|about|chi-siamo|sobre|team|tym|tiim|meeskond|squadra|equipe|equipo|staff|people|members|liikmed|coaches|treener|trener|trenari|treneri|juhatus|vorstand|zarzad|verein|mannschaft|vedeni)/i;\n\nlet combined='CLUB DOMAIN: '+(useSite?domain:'(none — see federation directory page)')+'\\nCLUB: '+(club.name||'')+'\\n';\nif (multisport) combined+='NOTE: This is a MULTI-SPORT club — extract ONLY the volleyball section/department contacts (its coach/board), not other sports.\\n';\n\nlet cands=[], fetchedSite=false, fetchedDetail=false;\nif (useSite){\n  // E: Firecrawl markdown only when Fetch home flagged needsRender (else plain HTML)\n  let md='', homeRaw='', homeText='';\n  if (fh.needsRender){ try{ const fc=$('Firecrawl home').first().json; md=(fc&&fc.data&&fc.data.markdown)||''; }catch(e){} }\n  if (md){ homeText = md.slice(0,40000); }\n  else { homeRaw = fh.html||''; homeText = clean(homeRaw).slice(0,40000); }\n  const links=[];\n  const addLink=(txt,h)=>{ if(!h||/^(mailto:|tel:|javascript:|#)/i.test(h)) return; if(!KW.test(h)&&!KW.test(txt||'')) return; let abs; if(/^https?:\\/\\//i.test(h)) abs=h.split('#')[0]; else if(h.charAt(0)==='/') abs='https://'+domain+h.split('#')[0]; else return; if(hostOf(abs)===domain && links.indexOf(abs)<0) links.push(abs); };\n  if (md){ const re=/\\[([^\\]]*)\\]\\(([^)\\s]+)\\)/g; let m; while((m=re.exec(md))) addLink(m[1],m[2]); }\n  else { const re=/<a\\b[^>]*href=[\"']([^\"']+)[\"'][^>]*>([\\s\\S]*?)<\\/a>/gi; let m; while((m=re.exec(homeRaw))) addLink(m[2].replace(/<[^>]+>/g,' '), m[1]); }\n  const onDom=(u)=> u && hostOf(u)===domain; const norm=(u)=> String(u).split('#')[0];\n  const seed=[];\n  if (multisport && onDom(club.section_url)) seed.push(norm(club.section_url));\n  if (onDom(club.contact_url)) seed.push(norm(club.contact_url));\n  if (!multisport && onDom(club.section_url)) seed.push(norm(club.section_url));\n  const ordered=[]; for(const u of seed.concat(links)){ if(u && u!==home && ordered.indexOf(u)<0) ordered.push(u); }\n  cands=ordered.slice(0,4);\n  combined+='\\n=== '+home+' (homepage) ===\\n'+homeText;\n  for(const c of cands){ const t=await grab(c); if(t) combined+='\\n\\n=== '+c+' ===\\n'+clean(t).slice(0,15000); }\n  fetchedSite = homeText.length>200 || md.length>0;\n}\n\nif (detail){\n  // H: federation directory page — the club's own contact, minus federation boilerplate\n  const t=await grab(detail);\n  if (t){ const dc=clean(t).slice(0,15000); combined+='\\n\\n=== '+detail+' (FEDERATION DIRECTORY PAGE — extract THIS club only; EXCLUDE the federation own office/press/marketing/website/social emails) ===\\n'+dc; fetchedDetail = dc.length>50; }\n}\n\nconst harvestedEmails = (useSite && Array.isArray(club.website_emails)) ? club.website_emails : [];\nconst fetched = fetchedSite || fetchedDetail;\nreturn [{json:{clubId:club.id, name:club.name||'', domain: (useSite?domain:detailHost), detailHost, home, detail, candidates:cands, combined, fetched, harvestedEmails, multisport}}];\n"
       },
       "id": "crawl",
       "name": "Crawl",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        60,
+        560,
         0
       ]
     },
@@ -108,7 +108,7 @@
         "promptType": "define",
         "text": "={{ $json.combined ? $json.combined : 'No content.' }}",
         "options": {
-          "systemMessage": "You are given the cleaned text of a volleyball club's OWN website (homepage + contact/about/team pages). mailto links appear inline as 'Name <email>'. Extract the club's contacts. Return ONLY JSON - no prose, no code fences - {\"contacts\":[{\"email\":string,\"name\":string,\"position\":string,\"phone\":string}]}. email is REQUIRED per contact (omit any contact without an email; capture only emails literally present, including the <email> shown inline from mailto links; NEVER invent, complete or guess an email). For EACH email, look at the surrounding line/row/card for: NAME = the person's full name if shown; POSITION = their role in ANY language (e.g. President/Predsjednik/Předseda/Esimees, Secretary/Sekretär/Sekretär, Coach/Trener/Treener/Trainer, Board member/Vorstand/Juhatus). name and position are OPTIONAL - include them whenever they appear near the email; use \"\" if absent. phone = a phone shown near the email, else \"\". EXCLUDE: the website designer/agency, hosting/CMS/platform addresses (wordpress@, sentry@, no-reply@, postmaster@, hosting info@/support@), social media, cookie/privacy boilerplate, and unrelated third-party domains. PREFER emails on the club's own domain (CLUB DOMAIN given) or a personal address tied to a named person. If no legitimate club email is present, return {\"contacts\":[]}."
+          "systemMessage": "You are given the cleaned text of a volleyball club's OWN website (homepage + contact/about/team pages). The text is split into sections, each preceded by a header line '=== URL ===' giving the page that section came from. mailto links appear inline as 'Name <email>'. If a NOTE says this is a multi-sport club, extract ONLY the volleyball section's contacts, not other sports. A section whose '=== URL ===' header is marked '(FEDERATION DIRECTORY PAGE ...)' is the federation's listing of THIS club: extract the club's own contact shown there (email/phone/president or board name), but EXCLUDE the federation's own addresses (office@, press@, marketing@, website@, social@, info@ on the federation's domain, or any address that is the federation's general contact rather than this specific club's). Extract the club's contacts. Return ONLY JSON - no prose, no code fences - {\"contacts\":[{\"email\":string,\"name\":string,\"position\":string,\"phone\":string,\"source\":string}]}. email is REQUIRED per contact (omit any contact without an email; capture only emails literally present, including the <email> shown inline from mailto links; NEVER invent, complete or guess an email). For EACH email, look at the surrounding line/row/card for: NAME = the person's full name if shown; POSITION = their role in ANY language (e.g. President/Predsjednik/Předseda/Esimees, Secretary/Sekretär, Coach/Trener/Treener/Trainer, Board member/Vorstand/Juhatus). name and position are OPTIONAL - include them whenever they appear near the email; use \"\" if absent. phone = a phone shown near the email, else \"\". source = the URL from the nearest '=== URL ===' header ABOVE the email (use the homepage URL for the homepage section); use \"\" if unsure. EXCLUDE: the website designer/agency, hosting/CMS/platform addresses (wordpress@, sentry@, no-reply@, postmaster@, hosting info@/support@), social media, cookie/privacy boilerplate, and unrelated third-party domains. PREFER emails on the club's own domain (CLUB DOMAIN given) or a personal address tied to a named person. If no legitimate club email is present, return {\"contacts\":[]}."
         }
       },
       "id": "extract",
@@ -116,7 +116,7 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.7,
       "position": [
-        240,
+        740,
         0
       ],
       "onError": "continueRegularOutput",
@@ -134,7 +134,7 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1,
       "position": [
-        240,
+        740,
         200
       ],
       "credentials": {
@@ -148,14 +148,14 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst c = $('Crawl').first().json;\nif (c.__skip) return [{json:{ok:false,note:'no website'}}];\nconst clubId=c.clubId, src=c.home;\nconst isEmail=(e)=>/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(e);\nconst findContact=async(e)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs:{filter:\"(email='\"+e.replace(/'/g,'')+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nconst parse=(raw0)=>{let raw=String(raw0||'').trim().replace(/^```(json)?/i,'').replace(/```\\s*$/,'').trim();try{const p=JSON.parse(raw);if(p&&Array.isArray(p.contacts))return p.contacts;}catch(e){}const out=[];const st=[];for(let i=0;i<raw.length;i++){const ch=raw[i];if(ch==='{')st.push(i);else if(ch==='}'){const s=st.pop();if(s!=null){try{const o=JSON.parse(raw.slice(s,i+1));if(o&&typeof o==='object'&&('email' in o))out.push(o);}catch(_){}}}}return out;};\nconst cts=parse(($('Extract contacts').first().json||{}).output);\nlet created=0,patched=0;\nfor(const ct of cts){ const email=String((ct&&ct.email)||'').trim().toLowerCase(); if(!email||!isEmail(email)) continue;\n  const nm=String((ct&&ct.name)||'').trim(),pos=String((ct&&ct.position)||'').trim(),ph=String((ct&&ct.phone)||'').trim();\n  try{ await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/contacts/records',headers:pbH,body:{club:clubId,email,name:nm,position:pos,phone:ph,source_url:src,source_type:'club_site',verification_status:'unverified'},json:true}); created++; }\n  catch(e){ try{ const ex=await findContact(email); if(ex){ const p={}; if(!ex.club)p.club=clubId; if(nm&&!ex.name)p.name=nm; if(pos&&!ex.position)p.position=pos; if(ph&&!ex.phone)p.phone=ph; if(!ex.source_type)p.source_type='club_site'; if(!ex.source_url)p.source_url=src; if(Object.keys(p).length) await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/contacts/records/'+ex.id,headers:pbH,body:p,json:true}); patched++; } }catch(_){} }\n}\nconst got=created+patched;\nlet note, status;\nif(got>0){ note='site-scrape: '+got+' contact(s) from '+c.domain; status='contacts_found'; }\nelse if(!c.fetched){ note='site-scrape: fetch failed (anti-bot/blocked) — needs Apify'; status='error'; }\nelse { note='site-scrape: 0 contacts (no email on site / parked)'; status='no_contacts'; }\nconst now=new Date().toISOString();\ntry{ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/clubs/records/'+clubId,headers:pbH,body:{status,last_scraped:now,scrape_note:note},json:true}); }catch(_){}\nreturn [{json:{ok:true,clubId,domain:c.domain,contactsCreated:created,contactsPatched:patched,note}}];\n"
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst c = $('Crawl').first().json;\nif (c.__skip){\n  if(c.skipReason==='low_confidence') return [{json:{ok:false,clubId:c.clubId,note:'skipped: low-confidence (C), no detail page'}}];\n  return [{json:{ok:false,note:'no source (no website, no detail page)'}}];\n}\nconst clubId=c.clubId, domain=c.domain, detailHost=c.detailHost||'';\nconst src = c.home || c.detail;\nconst hostOf=(u)=>String(u||'').replace(/^https?:\\/\\//i,'').replace(/^www\\./i,'').split(/[\\/?#]/)[0].toLowerCase();\nconst isEmail=(e)=>/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(e);\nconst findContact=async(e)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs:{filter:\"(email='\"+e.replace(/'/g,'')+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nconst parse=(raw0)=>{let raw=String(raw0||'').trim().replace(/^```(json)?/i,'').replace(/```\\s*$/,'').trim();try{const p=JSON.parse(raw);if(p&&Array.isArray(p.contacts))return p.contacts;}catch(e){}const out=[];const st=[];for(let i=0;i<raw.length;i++){const ch=raw[i];if(ch==='{')st.push(i);else if(ch==='}'){const s=st.pop();if(s!=null){try{const o=JSON.parse(raw.slice(s,i+1));if(o&&typeof o==='object'&&('email' in o))out.push(o);}catch(_){}}}}return out;};\n\nlet created=0,patched=0; const seen=new Set();\nconst upsert=async(email,nm,pos,ph,srcUrl,styp)=>{\n  try{ await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/contacts/records',headers:pbH,body:{club:clubId,email,name:nm,position:pos,phone:ph,source_url:srcUrl,source_type:styp,verification_status:'unverified'},json:true}); created++; }\n  catch(e){ try{ const ex=await findContact(email); if(ex){ const p={}; if(!ex.club)p.club=clubId; if(nm&&!ex.name)p.name=nm; if(pos&&!ex.position)p.position=pos; if(ph&&!ex.phone)p.phone=ph; if(!ex.source_type)p.source_type=styp; if(!ex.source_url)p.source_url=srcUrl; if(Object.keys(p).length) await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/contacts/records/'+ex.id,headers:pbH,body:p,json:true}); patched++; } }catch(_){} }\n};\n// source page on the federation's detail host => 'directory', else the club's own site => 'club_site'\nconst typeOf=(u)=> (detailHost && hostOf(u)===detailHost) ? 'directory' : 'club_site';\n\nconst cts=parse(($('Extract contacts').first().json||{}).output);\nfor(const ct of cts){ const email=String((ct&&ct.email)||'').trim().toLowerCase(); if(!email||!isEmail(email)||seen.has(email)) continue; seen.add(email);\n  const nm=String((ct&&ct.name)||'').trim(),pos=String((ct&&ct.position)||'').trim(),ph=String((ct&&ct.phone)||'').trim();\n  let su=String((ct&&ct.source)||'').trim(); if(!/^https?:\\/\\//i.test(su)) su=src;   // G: per-contact source page\n  await upsert(email,nm,pos,ph,su,typeOf(su));\n}\n// C: deterministic homepage emails the LLM missed (website only) — never lose a real extracted email\nfor(const e0 of (c.harvestedEmails||[])){ const email=String(e0||'').trim().toLowerCase(); if(!email||!isEmail(email)||seen.has(email)) continue; seen.add(email); await upsert(email,'','','',c.home||src,'club_site'); }\n\nconst got=created+patched;\nlet note, status;\nif(got>0){ note='site-scrape: '+got+' contact(s) from '+(domain||'directory'); status='contacts_found'; }\nelse if(!c.fetched){ note='site-scrape: fetch failed (anti-bot/blocked) — needs Apify'; status='error'; }\nelse { note='site-scrape: 0 contacts (no email on site / parked)'; status='no_contacts'; }\nconst now=new Date().toISOString();\ntry{ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/clubs/records/'+clubId,headers:pbH,body:{status,last_scraped:now,scrape_note:note},json:true}); }catch(_){}\nreturn [{json:{ok:true,clubId,domain,contactsCreated:created,contactsPatched:patched,note}}];\n"
       },
       "id": "write",
       "name": "Write",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        440,
+        920,
         0
       ]
     },
@@ -177,7 +177,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -120,
+        380,
         160
       ],
       "onError": "continueRegularOutput",
@@ -187,6 +187,55 @@
           "name": "Firecrawl (leblovina)"
         }
       }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// E: plain-HTTP-first homepage fetch; flag whether JS rendering (Firecrawl) is needed.\nconst club = $('Get club').first().json;\nconst home = (club.website_url||'').trim();\nconst UA={'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36'};\nlet html='', ok=false;\nif (home){\n  try{ const r=await this.helpers.httpRequest({method:'GET',url:home,headers:UA,timeout:9000,returnFullResponse:true,ignoreHttpStatusErrors:true,followRedirect:true}); html=String(r.body||''); const sc=r.statusCode||0; ok=(sc>=200&&sc<400)||sc===401||sc===403; }catch(e){}\n}\nconst text = html.replace(/<script[\\s\\S]*?<\\/script>/gi,' ').replace(/<style[\\s\\S]*?<\\/style>/gi,' ').replace(/<[^>]+>/g,' ').replace(/\\s+/g,' ').trim();\nconst hasMail = /mailto:|[a-z0-9._%+\\-]+@[a-z0-9.\\-]+\\.[a-z]{2,}/i.test(html);\n// render needed when the plain fetch is empty / a JS shell with little usable text and no email\nconst needsRender = home ? (!ok || html.length<1500 || (text.length<400 && !hasMail) || (/enable javascript|please enable js/i.test(html) && text.length<800 && !hasMail)) : false;\nreturn [{json:{ home, html, ok, needsRender, textLen:text.length }}];\n"
+      },
+      "id": "fhome",
+      "name": "Fetch home",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.needsRender }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ifrender",
+      "name": "Needs render?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        200,
+        0
+      ]
     }
   ],
   "connections": {
@@ -227,7 +276,7 @@
       "main": [
         [
           {
-            "node": "Firecrawl home",
+            "node": "Fetch home",
             "type": "main",
             "index": 0
           }
@@ -269,6 +318,35 @@
     },
     "Firecrawl home": {
       "main": [
+        [
+          {
+            "node": "Crawl",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch home": {
+      "main": [
+        [
+          {
+            "node": "Needs render?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs render?": {
+      "main": [
+        [
+          {
+            "node": "Firecrawl home",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Crawl",

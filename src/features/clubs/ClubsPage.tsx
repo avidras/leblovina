@@ -101,9 +101,13 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
   const unresolvedFilter = useMemo(() => andFilter(filter, "website_status = 'unknown' || website_status = ''"), [filter])
   const recheckFilter = useMemo(() => andFilter(filter, "website_source = 'serper' && website_status = 'live'"), [filter])
   const harvestFilter = useMemo(() => andFilter(filter, "website_status = 'live'"), [filter])
+  // Site-scrape targets trusted sites (A/B; C is the wrong-club/aggregator bucket) PLUS any club
+  // with a federation detail page (federation-provenance; contacts even when there's no website).
+  const scrapeFilter = useMemo(() => andFilter(filter, "(website_status = 'live' && (website_confidence = 'A' || website_confidence = 'B')) || detail_url != ''"), [filter])
   const [unresolvedCount, setUnresolvedCount] = useState(0)
   const [recheckCount, setRecheckCount] = useState(0)
   const [harvestCount, setHarvestCount] = useState(0)
+  const [scrapeCount, setScrapeCount] = useState(0)
 
   // Server-side counts for the batch buttons; recomputed when the filter changes
   // and on every (realtime) page refetch (`items`) so they track status changes.
@@ -111,17 +115,18 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
     let alive = true
     ;(async () => {
       try {
-        const [u, r, h] = await Promise.all([
+        const [u, r, h, s] = await Promise.all([
           pb.collection('clubs').getList(1, 1, { filter: unresolvedFilter || undefined, fields: 'id' }),
           pb.collection('clubs').getList(1, 1, { filter: recheckFilter || undefined, fields: 'id' }),
           pb.collection('clubs').getList(1, 1, { filter: harvestFilter || undefined, fields: 'id' }),
+          pb.collection('clubs').getList(1, 1, { filter: scrapeFilter || undefined, fields: 'id' }),
         ])
-        if (alive) { setUnresolvedCount(u.totalItems); setRecheckCount(r.totalItems); setHarvestCount(h.totalItems) }
+        if (alive) { setUnresolvedCount(u.totalItems); setRecheckCount(r.totalItems); setHarvestCount(h.totalItems); setScrapeCount(s.totalItems) }
       } catch { /* non-fatal */ }
     })()
     return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unresolvedFilter, recheckFilter, harvestFilter, items])
+  }, [unresolvedFilter, recheckFilter, harvestFilter, scrapeFilter, items])
 
   // 'unresolved' → only clubs never resolved; 'all' → re-resolve everything (force);
   // 'recheck' → re-run the belongs-check on serper live URLs (no Serper spend);
@@ -177,13 +182,13 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
     )
   }
 
-  // Phase 5: crawl live club sites in the current filter for contacts (multi-page; Apify/Gemini).
-  // Heavier than resolve and writes to the Contacts collection. Background.
+  // Phase 5: crawl trusted (A/B) live club sites in the current filter for contacts
+  // (multi-page; Apify/Gemini). C is excluded (wrong-club/aggregator). Writes to Contacts.
   async function scrapeSites() {
-    if (harvestCount === 0) return
+    if (scrapeCount === 0) return
     const ok = await confirm({
       title: 'Scrape club sites for contacts',
-      message: `Crawl ${harvestCount} live club site(s) in the current filter for contacts (multi-page; uses Apify/Gemini credits)? Runs in the background.`,
+      message: `Crawl ${scrapeCount} club(s) in the current filter for contacts — trusted (A/B) websites + federation detail pages (multi-page; uses Apify/Gemini credits). Runs in the background.`,
       confirmLabel: 'Run',
     })
     if (!ok) return
@@ -192,7 +197,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
     let ids: string[]
     try {
       const list = await pb.collection('clubs').getFullList<{ id: string }>({
-        filter: harvestFilter || undefined, fields: 'id', batch: 500,
+        filter: scrapeFilter || undefined, fields: 'id', batch: 500,
       })
       ids = list.map((c) => c.id)
     } catch (e) {
@@ -284,9 +289,9 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
             {
               key: 'scrape',
               label: 'Full site scrape',
-              count: harvestCount,
-              description: 'Crawls each club’s whole website to find contacts. Slower and uses more credits.',
-              disabled: enrichBusy || harvestCount === 0,
+              count: scrapeCount,
+              description: 'Crawls each trusted (A/B) club’s website + any club’s federation detail page to find contacts. Slower and uses more credits. C-only sites excluded.',
+              disabled: enrichBusy || scrapeCount === 0,
               onSelect: scrapeSites,
             },
             {
