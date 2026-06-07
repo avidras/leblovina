@@ -16,6 +16,7 @@ const BATCH_ENRICH_URL = wh(import.meta.env.VITE_N8N_BATCH_ENRICH_URL, 'batch-en
 const ENGLISHIZE_CLUBS_URL = wh(import.meta.env.VITE_N8N_ENGLISHIZE_CLUBS_URL, 'englishize-clubs')
 const SCRAPE_ENQUEUE_URL = wh(import.meta.env.VITE_N8N_SCRAPE_ENQUEUE_URL, 'scrape-enqueue')
 const SITE_SCRAPE_URL = wh(import.meta.env.VITE_N8N_SITE_SCRAPE_URL, 'site-scrape-driver')
+const SEARCH_KEYWORDS_URL = wh(import.meta.env.VITE_N8N_SEARCH_KEYWORDS_URL, 'search-keywords-generate')
 
 export interface TriggerResult {
   ok: boolean
@@ -124,4 +125,18 @@ export async function triggerScrapeEnqueue(
     return { ok: false, status: 0, error: 'VITE_N8N_SCRAPE_ENQUEUE_URL is not set' }
   }
   return postWebhook(SCRAPE_ENQUEUE_URL, opts)
+}
+
+// Search-led discovery: generate localized search keywords for a country into the
+// `search_keywords` registry (status='pending'). The `search-discover-drain` cron then
+// runs them (Serper -> strict classifier -> URL-dedup -> create under "No federation –
+// Google" + enqueue for contact scraping), gated by settings.search_discover.enabled.
+// See specs/search-led-discovery.md.
+export async function triggerSearchKeywordsGenerate(
+  opts: { country: string; cities?: string[]; count?: number },
+): Promise<TriggerResult> {
+  if (!SEARCH_KEYWORDS_URL) {
+    return { ok: false, status: 0, error: 'VITE_N8N_SEARCH_KEYWORDS_URL is not set' }
+  }
+  return postWebhook(SEARCH_KEYWORDS_URL, opts)
 }

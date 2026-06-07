@@ -14,7 +14,7 @@ import { Tooltip } from '@/components/ui/tooltip'
 import { Dialog, DialogField } from '@/components/ui/dialog'
 import { useConfirm } from '@/components/ui/confirm'
 import { ActionsMenu } from '@/components/ui/menu'
-import { FilterPanel } from '@/components/ui/filter-panel'
+import { FilterPanel, ResetFiltersButton } from '@/components/ui/filter-panel'
 import { CountryLabel } from '@/components/ui/country'
 import { Pagination } from '@/components/ui/pagination'
 import { withFlag } from '@/lib/countries'
@@ -52,6 +52,8 @@ export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string
   const [batchBusy, setBatchBusy] = useState(false)
   const { confirm, confirmElement } = useConfirm()
   const resetPage = () => setPage(1)
+  const filtersActive = [conf, status, q].some(Boolean)
+  const resetFilters = () => { setConf(''); setStatus(''); setQ(''); resetPage() }
 
   const debouncedQ = useDebouncedValue(q, 300)
   const filter = useMemo(
@@ -158,6 +160,7 @@ export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string
             ))}
           </Select>
         </FilterPanel>
+        <ResetFiltersButton active={filtersActive} onReset={resetFilters} />
         <span className="ml-auto text-sm text-neutral-500">{totalItems.toLocaleString()} federations{loading ? ' · loading…' : ''}</span>
         <ActionsMenu
           busy={batchBusy}

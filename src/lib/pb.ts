@@ -50,7 +50,10 @@ export interface Federation {
 }
 
 export type ClubStatus = 'new' | 'contacts_found' | 'no_contacts' | 'error' | 'needs_review'
-export type WebsiteSource = 'official_list' | 'serper' | 'manual' | 'none'
+// `search` = found by search-led discovery ("No federation – Google"); see
+// specs/search-led-discovery.md. Lower-trust until vetted (status='needs_review').
+export type WebsiteSource = 'official_list' | 'serper' | 'manual' | 'none' | 'search'
+export const WEBSITE_SOURCES: WebsiteSource[] = ['official_list', 'serper', 'manual', 'none', 'search']
 export type WebsiteStatus = 'unknown' | 'live' | 'dead' | 'not_found'
 export const WEBSITE_STATUSES: WebsiteStatus[] = ['unknown', 'live', 'dead', 'not_found']
 
@@ -125,6 +128,27 @@ export interface ScrapeQueue {
   enqueued_at: string
   processed_at: string
   attempts: number
+  created: string
+  updated: string
+}
+
+// Mirrors the `search_keywords` collection — the keyword registry + per-keyword
+// tracking log drained by the `search-discover-drain` cron. See
+// specs/search-led-discovery.md.
+export type SearchKeywordStatus = 'pending' | 'searching' | 'searched' | 'error'
+export interface SearchKeyword {
+  id: string
+  keyword: string
+  country: string
+  lang: string
+  status: SearchKeywordStatus | ''
+  searched_at: string
+  results_count: number
+  accepted_count: number
+  new_clubs: number
+  dup_count: number
+  attempts: number
+  notes: string
   created: string
   updated: string
 }

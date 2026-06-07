@@ -218,6 +218,35 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > backlog (UKR/RUS/BUL/SRB/GRE Cyrillic+Greek). Also fixed the DataProject extractor to
 > HTML-decode names (`&quot;`). Spec: `specs/club-name-englishization.md`.
 
+> **Search-led discovery — "No federation – Google" (2026-06-07):** A second discovery channel
+> that finds clubs NOT in any federation directory. Spec: `specs/search-led-discovery.md`.
+> Schema (migration `1780655700_search_discovery.js`, **also created live via PB API**, idempotent):
+> `clubs.website_source` += `search`; new `search_keywords` collection (keyword registry +
+> per-keyword tracking log: status pending/searching/searched/error, results/accepted/new_clubs/
+> dup_count); `settings.search_discover` `{enabled,batch_size}` control (paused by default);
+> pseudo-federation **GGL** "No federation – Google" (`country='Global'`, id `8j4be811sxpus4t`).
+> **Three n8n workflows** (drain→processor split because Serper/Anthropic are credentialed HTTP
+> nodes, unusable from a Code node — mirrors scrape-queue-drain→site-scrape-club):
+> - `search-keywords-generate` `bqvL9pMe0f2NLxKZ` | `/webhook/search-keywords-generate` (Haiku
+>   makes localized club queries → upsert pending rows)
+> - `search-keyword-process` `XEHgcX4lPg7KRY8M` | `/webhook/search-keyword-process` (Serper →
+>   blocklist + strict deterministic pre-screen → strict Haiku club-classifier → URL-host dedup
+>   vs ALL clubs → create under GGL `website_source='search'`/`B`/`needs_review`,
+>   `dedup_key='search:<host>'` → enqueue into existing `scrape_queue` → write back counts)
+> - `search-discover-drain` (cron, every 2 min) `x4g5G7jbI5wO11Eu` (gated by the settings flag;
+>   backpressure on `searching`; stale-retry; dispatches the processor)
+> UI: new **Discovery** view (`src/features/discovery/DiscoveryPage.tsx`, in App nav) — keyword
+> table (sortable/filter/CSV) + "Generate keywords" (country) + Pause/Resume drain + live stats.
+> Dashboard: "No federation (search)" row in By-confederation + a new "How it works" step.
+> Clubs list: **Source filter** (incl. "Exclude search discovery (Google)") + sortable **Created**
+> column. Contacts: sortable **Created** column. **Reset filters** button on all three lists.
+> **Pilot = the two biggest long tails: Italy (was 49 clubs) + Germany (was 163)**, ~20 keywords
+> each, drain enabled. Early results: **Italy 42 new clubs / 0 dup, Germany 13 new / 1 dup**
+> (URL-dedup confirmed working), ~85 contacts already auto-harvested from the discovered sites;
+> precision spot-check excellent (real club .it/.de sites, no federations/news/shops). Drain
+> still finishing the remaining keywords. **Tune from the new_clubs-vs-dup numbers before scaling
+> to more countries.**
+
 > **Phase 2.6 — resolve-time website enrichment (2026-06-07):** Reworked the `enrich-club`
 > resolve (`jOeufPcBBIWrij7M`, **deployed live + export in sync**). New `clubs` fields (migration
 > `1780655300_clubs_enrichment.js`, **not yet deployed to prod** — PB silently drops them on PATCH

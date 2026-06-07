@@ -56,6 +56,32 @@ export function FilterPanel({
   )
 }
 
+// A "Reset filters" button shown next to FilterPanel only when at least one filter is active.
+// Clears all active filters (and the search box) for the list. `active` gates visibility.
+export function ResetFiltersButton({ active, onReset }: { active: boolean; onReset: () => void }) {
+  if (!active) return null
+  return (
+    <button
+      type="button"
+      onClick={onReset}
+      title="Clear all active filters"
+      className="inline-flex h-9 items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-2.5 text-sm text-neutral-600 shadow-sm hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400"
+    >
+      <ResetIcon />
+      Reset filters
+    </button>
+  )
+}
+
+function ResetIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+      <path d="M3 3v5h5" />
+    </svg>
+  )
+}
+
 function FilterIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>

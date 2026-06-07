@@ -1,0 +1,133 @@
+{
+  "name": "Leblovina — Search keyword process",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "search-keyword-process", "responseMode": "lastNode", "options": {} },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-700, 0],
+      "webhookId": "search-keyword-process"
+    },
+    {
+      "parameters": {
+        "assignments": { "assignments": [
+          { "id": "p", "name": "pbUrl", "value": "https://leblovina.tools.biceps.digital", "type": "string" }
+        ] },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-540, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-380, 0],
+      "credentials": { "httpCustomAuth": { "id": "hzdBwrAqrPZjDmME", "name": "PocketBase admin (api)" } }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/search_keywords/records/{{ $('Webhook').item.json.body.id }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Authorization", "value": "={{ $('PB Auth').item.json.token }}" } ] },
+        "options": {}
+      },
+      "id": "getk",
+      "name": "Get Keyword",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-220, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://google.serper.dev/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ q: $('Get Keyword').item.json.keyword, num: 10 }) }}",
+        "options": {}
+      },
+      "id": "serp",
+      "name": "Serper Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-40, 0],
+      "onError": "continueRegularOutput",
+      "credentials": { "httpHeaderAuth": { "id": "oPmSDcClj5DfGKCM", "name": "Serper (leblovina)" } }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const kw=$('Get Keyword').first().json;\nconst organic=(($('Serper Search').first().json||{}).organic)||[];\nconst hostOf=(u)=>String(u||'').replace(/^https?:\\/\\//i,'').replace(/^www\\./i,'').split(/[\\/?#]/)[0].toLowerCase();\n// drop non-club hosts: social, news, wiki, federations/FIVB/CEV, results platforms, retail, gov, video, blogs\nconst blocked=/(facebook|instagram|twitter|x\\.com|linkedin|youtube|youtu\\.be|tiktok|vimeo|pinterest|reddit|telegram|whatsapp|wikipedia|fandom|wikiwand|volleybox|sofascore|flashscore|transfermarkt|eurosport|worldofvolley|volleyballworld|dataproject\\.com|cev\\.eu|fivb\\.|olympics\\.com|maps\\.google|google\\.|tripadvisor|yelp|amazon|ebay|aliexpress|etsy|booking\\.|airbnb|ticketmaster|eventim|ticketportal|ticketpro|\\.gov|gazzetta|kicker|sport1|sportschau|news|magazine|blogspot|wordpress\\.com|medium\\.com|spotify|apple\\.com|play\\.google|yumpu|issuu|scribd|indeed|glassdoor)/i;\nconst UA={'User-Agent':'Mozilla/5.0 (compatible; leblovina)'};\nconst isLive=(c)=>(c>=200&&c<400)||c===401||c===403||c===429;\nconst get=async(u)=>{try{const r=await this.helpers.httpRequest({method:'GET',url:u,timeout:8000,returnFullResponse:true,ignoreHttpStatusErrors:true,followRedirect:true,headers:UA});return{ok:isLive(r.statusCode||0),status:r.statusCode||0,body:String(r.body||'')};}catch(e){return{ok:false,status:0,body:''};}};\nconst VB=/(volley|voleib|voley|pallavolo|siatk|odbojk|roplab|r\\u00f6plab|tinklin|\\u0432\\u043e\\u043b\\u0435|voleybol|lentopallo|volleybal|petosf|\\u03c0\\u03b5\\u03c4\\u03bf\\u03c3\\u03c6|\\u03b2\\u03bf\\u03bb\\u03b5)/i;\nconst seen=new Set(); const cands=[];\nfor(const r of organic){ const u=r.link; if(!u||!/^https?:\\/\\//i.test(u))continue; const h=hostOf(u); if(!h||blocked.test(h))continue; if(seen.has(h))continue; seen.add(h); cands.push({url:u,host:h,title:r.title||'',snippet:r.snippet||''}); if(cands.length>=8)break; }\nconst prepared=[];\nfor(const c of cands){\n  let r=await get('https://'+c.host); let body=r.body;\n  if(!r.ok||!body){ r=await get(c.url); body=r.body; if(!r.ok||!body) continue; }\n  const grab=(re)=>{const mm=body.match(re);return mm?mm[1]:'';};\n  const title=grab(/<title[^>]*>([\\s\\S]*?)<\\/title>/i).replace(/<[^>]+>/g,' ').replace(/\\s+/g,' ').trim().slice(0,200);\n  const ogSite=grab(/<meta[^>]+property=[\"']og:site_name[\"'][^>]+content=[\"']([^\"']*)[\"']/i).slice(0,200);\n  const h1=grab(/<h1[^>]*>([\\s\\S]*?)<\\/h1>/i).replace(/<[^>]+>/g,' ').replace(/\\s+/g,' ').trim().slice(0,200);\n  const head=(title+' '+ogSite+' '+h1).toLowerCase();\n  const text=body.replace(/<script[\\s\\S]*?<\\/script>/gi,' ').replace(/<style[\\s\\S]*?<\\/style>/gi,' ').replace(/<[^>]+>/g,' ').replace(/\\s+/g,' ').slice(0,6000);\n  const dom=c.host.replace(/[^a-z0-9]/g,'');\n  const hasVB=VB.test(head)||VB.test(text)||VB.test(dom);\n  const parked=/(domain (is |may be )?for sale|buy this domain|sedoparking|hugedomains|parking-?lander|godaddy|namecheap|this domain is for sale)/i.test(body);\n  const linkCount=(body.match(/<a\\b/gi)||[]).length;\n  const directoryish=linkCount>180;\n  if(!hasVB||parked) continue;   // strict pre-screen: must show volleyball, not parked\n  prepared.push({host:c.host,url:'https://'+c.host,title,ogSite,h1,excerpt:text.slice(0,1500),directoryish});\n}\nreturn [{json:{kwId:kw.id,keyword:kw.keyword,country:kw.country,lang:kw.lang,resultsCount:organic.length,candidates:prepared}}];\n"
+      },
+      "id": "prep",
+      "name": "Prepare candidates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [160, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "anthropic-version", "value": "2023-06-01" } ] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 900, messages: [ { role: 'user', content: 'You are a STRICT classifier for a volleyball-club lead database, target country \"' + ($json.country||'') + '\". For EACH candidate website decide whether it is the OFFICIAL website of a SINGLE, REAL volleyball CLUB (fields volleyball teams / runs training / has membership). Answer \"no\" for: a national or regional FEDERATION/association, a league/cup/competition/results/stats/ranking site, news/magazine/blog, a shop, a directory/aggregator/portal that lists many clubs, a school or university without its own club, a generic sports-hall/arena/municipality page, an events or ticketing page, or anything ambiguous. Be conservative: when unsure, answer \"no\". It is better to drop a real club than to admit a non-club. Candidates: ' + JSON.stringify(($json.candidates||[]).map(c=>({host:c.host,title:c.title,site_name:c.ogSite,h1:c.h1,excerpt:c.excerpt}))) + '. Respond ONLY with compact JSON {\"results\":[{\"host\":string,\"is_club\":\"yes\"|\"no\",\"name\":string,\"city\":string,\"reason\":string}]}: name = the club own cleaned name, city = its city if shown else \"\". Include every host exactly once. No prose, no code fences.' } ] }) }}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "cls",
+      "name": "Classify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [380, 0],
+      "onError": "continueRegularOutput",
+      "credentials": { "anthropicApi": { "id": "PsTv3b7j6pP2jeMt", "name": "Anthropic (leblovina)" } }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst prep=$('Prepare candidates').first().json;\nconst hostOf=(u)=>String(u||'').replace(/^https?:\\/\\//i,'').replace(/^www\\./i,'').split(/[\\/?#]/)[0].toLowerCase();\n// resolve GGL pseudo-federation id\nlet GGL=''; try{ const g=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/federations/records',qs:{filter:\"fivb_code='GGL'\",perPage:1,fields:'id'},headers:pbH,json:true}); GGL=(g.items&&g.items[0]&&g.items[0].id)||''; }catch(e){}\n// parse strict classifier output\nlet results=[]; try{ const resp=$('Classify').first().json; const txt=(resp&&resp.content&&resp.content[0]&&resp.content[0].text)||''; const o=JSON.parse(String(txt).replace(/```json/gi,'').replace(/```/g,'').trim()); results=Array.isArray(o.results)?o.results:[]; }catch(e){}\nconst byHost={}; for(const r of results){ if(r&&r.host) byHost[hostOf(r.host)]=r; }\nconst accepted=[]; for(const c of (prep.candidates||[])){ const r=byHost[c.host]; if(r&&String(r.is_club).toLowerCase()==='yes'){ accepted.push({host:c.host,url:c.url,name:String(r.name||c.title||c.host).trim().slice(0,200),city:String(r.city||'').trim().slice(0,100)}); } }\n// URL-host dedup against ALL existing clubs (any source)\nconst existsHost=async(host)=>{ try{ const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:'website_url~\"'+host+'\"',perPage:50,fields:'website_url'},headers:pbH,json:true}); return (r.items||[]).some(it=>hostOf(it.website_url)===host); }catch(e){ return false; } };\nlet newClubs=0, dup=0; const nowIso=new Date().toISOString();\nfor(const a of accepted){\n  if(!a.name){ continue; }\n  if(await existsHost(a.host)){ dup++; continue; }\n  const club={ federation:GGL, name:a.name, country:prep.country||'', city:a.city||'', website_url:a.url, website_source:'search', website_status:'live', website_confidence:'B', status:'needs_review', dedup_key:'search:'+a.host, notes:'Search-led discovery (keyword: '+prep.keyword+')' };\n  let created=null;\n  try{ created=await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/clubs/records',headers:pbH,body:club,json:true}); newClubs++; }\n  catch(e){ dup++; continue; }   // unique dedup_key conflict => host already held\n  try{ await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/scrape_queue/records',headers:pbH,body:{club:created.id,status:'queued',force:false,enqueued_at:nowIso,attempts:0},json:true}); }catch(e){}\n}\ntry{ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/search_keywords/records/'+prep.kwId,headers:pbH,body:{status:'searched',searched_at:nowIso,results_count:prep.resultsCount||0,accepted_count:accepted.length,new_clubs:newClubs,dup_count:dup,notes:''},json:true}); }catch(e){}\nreturn [{json:{kwId:prep.kwId,keyword:prep.keyword,results:prep.resultsCount,candidates:(prep.candidates||[]).length,accepted:accepted.length,new_clubs:newClubs,dup_count:dup}}];\n"
+      },
+      "id": "crt",
+      "name": "Create + enqueue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, 0]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "PB Auth", "type": "main", "index": 0 }]] },
+    "PB Auth": { "main": [[{ "node": "Get Keyword", "type": "main", "index": 0 }]] },
+    "Get Keyword": { "main": [[{ "node": "Serper Search", "type": "main", "index": 0 }]] },
+    "Serper Search": { "main": [[{ "node": "Prepare candidates", "type": "main", "index": 0 }]] },
+    "Prepare candidates": { "main": [[{ "node": "Classify", "type": "main", "index": 0 }]] },
+    "Classify": { "main": [[{ "node": "Create + enqueue", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false,
+  "pinData": {},
+  "meta": { "templateId": "leblovina-search-keyword-process" }
+}

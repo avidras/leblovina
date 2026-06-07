@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { pb, type Club, type Contact, type ScrapePage, type WebsiteConfidence, type ClubType, WEBSITE_STATUSES, WEBSITE_CONFIDENCES, CLUB_TYPES } from '@/lib/pb'
+import { pb, type Club, type Contact, type ScrapePage, type WebsiteConfidence, type ClubType, WEBSITE_STATUSES, WEBSITE_CONFIDENCES, CLUB_TYPES, WEBSITE_SOURCES } from '@/lib/pb'
 import { statusLabel, websiteStatusLabel, websiteSourceLabel, confidenceLabel, confidenceHelp, clubTypeLabel } from '@/lib/labels'
 import { usePagedCollection } from '@/hooks/usePagedCollection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
@@ -15,7 +15,7 @@ import { Select } from '@/components/ui/select'
 import { Badge, statusTone } from '@/components/ui/badge'
 import { Tooltip } from '@/components/ui/tooltip'
 import { ActionsMenu } from '@/components/ui/menu'
-import { FilterPanel } from '@/components/ui/filter-panel'
+import { FilterPanel, ResetFiltersButton } from '@/components/ui/filter-panel'
 import { Dialog, DialogField } from '@/components/ui/dialog'
 import { useConfirm } from '@/components/ui/confirm'
 import { CountryLabel } from '@/components/ui/country'
@@ -23,7 +23,7 @@ import { Pagination } from '@/components/ui/pagination'
 import { withFlag } from '@/lib/countries'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
-type SortKey = 'name' | 'country' | 'city' | 'status' | 'last_scraped' | 'website_url' | 'website_status' | 'website_confidence' | 'club_type'
+type SortKey = 'name' | 'country' | 'city' | 'status' | 'last_scraped' | 'created' | 'website_url' | 'website_status' | 'website_confidence' | 'club_type'
 
 // Combine filter clauses with AND, wrapping each clause so OR-groups stay scoped.
 function andFilter(...clauses: (string | false | undefined)[]): string {
@@ -34,7 +34,7 @@ function andFilter(...clauses: (string | false | undefined)[]): string {
 // selections match both the literal 'unknown' and empty string (mirrors the old
 // client-side `(x || 'unknown')` defaulting).
 function buildClubsFilter(f: {
-  country: string; hasSite: string; ws: string; wc: string; ct: string; q: string
+  country: string; hasSite: string; ws: string; wc: string; ct: string; src: string; q: string
 }): string {
   return andFilter(
     f.country && pb.filter('country = {:v}', { v: f.country }),
@@ -43,8 +43,18 @@ function buildClubsFilter(f: {
     f.ws && (f.ws === 'unknown' ? "website_status = 'unknown' || website_status = ''" : pb.filter('website_status = {:v}', { v: f.ws })),
     f.wc && (f.wc === 'unknown' ? "website_confidence = 'unknown' || website_confidence = ''" : pb.filter('website_confidence = {:v}', { v: f.wc })),
     f.ct && (f.ct === 'unknown' ? "club_type = 'unknown' || club_type = ''" : pb.filter('club_type = {:v}', { v: f.ct })),
+    // provenance: pick one source, or "not_search" to exclude the search-discovered ("Google") clubs
+    f.src && (f.src === 'not_search' ? "website_source != 'search'" : pb.filter('website_source = {:v}', { v: f.src })),
     f.q && pb.filter('name ~ {:q} || name_en ~ {:q} || country ~ {:q} || region ~ {:q} || city ~ {:q}', { q: f.q }),
   )
+}
+
+const WEBSITE_SOURCE_LABEL: Record<string, string> = {
+  official_list: 'Federation directory',
+  serper: 'Auto-resolved (search)',
+  manual: 'Manual',
+  none: 'No source',
+  search: 'Search discovery (Google)',
 }
 
 // A = trusted (green), B = probable (blue), C = low-confidence/review (amber).
@@ -73,6 +83,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
   const [wsFilter, setWsFilter] = useUrlState('ws')
   const [wcFilter, setWcFilter] = useUrlState('wc')
   const [ctFilter, setCtFilter] = useUrlState('ct')
+  const [srcFilter, setSrcFilter] = useUrlState('src')
   const [sort, setSort] = usePersistentState<{ key: SortKey; dir: 'asc' | 'desc' }>('clubs:sort', { key: 'name', dir: 'asc' })
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(100)
@@ -82,11 +93,17 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
   const { confirm, confirmElement } = useConfirm()
   const countries = useCountries('clubs')
   const resetPage = () => setPage(1)
+  const filtersActive = [q, country, hasSite, wsFilter, wcFilter, ctFilter, srcFilter].some(Boolean)
+  const resetFilters = () => {
+    setQ(''); setCountry(''); clearUrlParam('country'); setHasSite('')
+    setWsFilter(''); setWcFilter(''); setCtFilter(''); setSrcFilter('')
+    resetPage()
+  }
 
   const debouncedQ = useDebouncedValue(q, 300)
   const filter = useMemo(
-    () => buildClubsFilter({ country, hasSite, ws: wsFilter, wc: wcFilter, ct: ctFilter, q: debouncedQ.trim() }),
-    [country, hasSite, wsFilter, wcFilter, ctFilter, debouncedQ],
+    () => buildClubsFilter({ country, hasSite, ws: wsFilter, wc: wcFilter, ct: ctFilter, src: srcFilter, q: debouncedQ.trim() }),
+    [country, hasSite, wsFilter, wcFilter, ctFilter, srcFilter, debouncedQ],
   )
   const sortStr = `${sort.dir === 'asc' ? '+' : '-'}${sort.key}`
   const { items, totalItems, totalPages, loading, error } = usePagedCollection<Club>('clubs', {
@@ -252,7 +269,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <Input className="max-w-xs" placeholder="Search club / city / region…" value={q} onChange={(e) => { setQ(e.target.value); resetPage() }} />
-        <FilterPanel activeCount={[country, hasSite, wsFilter, wcFilter, ctFilter].filter(Boolean).length}>
+        <FilterPanel activeCount={[country, hasSite, wsFilter, wcFilter, ctFilter, srcFilter].filter(Boolean).length}>
           <Select className="w-full" value={country} onChange={(e) => { setCountry(e.target.value); if (!e.target.value) clearUrlParam('country'); resetPage() }} title="Filter by country">
             <option value="">Any country</option>
             {countries.map((c) => (<option key={c} value={c}>{c}</option>))}
@@ -280,7 +297,15 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
               <option key={t} value={t}>{clubTypeLabel(t)}</option>
             ))}
           </Select>
+          <Select className="w-full" value={srcFilter} onChange={(e) => { setSrcFilter(e.target.value); resetPage() }} title="Filter by where the club came from (provenance)">
+            <option value="">Any source</option>
+            {WEBSITE_SOURCES.map((s) => (
+              <option key={s} value={s}>{WEBSITE_SOURCE_LABEL[s] ?? s}</option>
+            ))}
+            <option value="not_search">Exclude search discovery (Google)</option>
+          </Select>
         </FilterPanel>
+        <ResetFiltersButton active={filtersActive} onReset={resetFilters} />
         <span className="ml-auto text-sm text-neutral-500">{totalItems.toLocaleString()} clubs{loading ? ' · loading…' : ''}</span>
         <ActionsMenu
           busy={enrichBusy}
@@ -365,6 +390,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
               <TH className="text-right">Contacts</TH>
               <TH sortable sorted={sortedOf('status')} onClick={() => toggleSort('status')}>Status</TH>
               <TH sortable sorted={sortedOf('last_scraped')} onClick={() => toggleSort('last_scraped')}>Last scrape</TH>
+              <TH sortable sorted={sortedOf('created')} onClick={() => toggleSort('created')}>Created</TH>
             </TR>
           </THead>
           <TBody>
@@ -427,6 +453,9 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
                   title={c.last_scraped ? `${exactTime(c.last_scraped)}${c.scrape_note ? ` — ${c.scrape_note}` : ''}` : (c.scrape_note || '')}
                 >
                   {relTime(c.last_scraped)}
+                </TD>
+                <TD className="whitespace-nowrap text-xs text-neutral-500" title={c.created ? exactTime(c.created) : ''}>
+                  {relTime(c.created)}
                 </TD>
               </TR>
             ))}

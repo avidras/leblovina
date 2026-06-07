@@ -11,14 +11,15 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogField } from '@/components/ui/dialog'
 import { CountryLabel } from '@/components/ui/country'
 import { ActionsMenu } from '@/components/ui/menu'
-import { FilterPanel } from '@/components/ui/filter-panel'
+import { FilterPanel, ResetFiltersButton } from '@/components/ui/filter-panel'
 import { Pagination } from '@/components/ui/pagination'
 import { withFlag } from '@/lib/countries'
+import { relTime, exactTime } from '@/lib/time'
 import { downloadCsv } from '@/lib/csv'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 import { ClubDetailDialog } from '@/features/clubs/ClubsPage'
 
-type SortKey = 'club' | 'country' | 'email' | 'position' | 'phone' | 'source' | 'sourceType' | 'verification'
+type SortKey = 'club' | 'country' | 'email' | 'position' | 'phone' | 'source' | 'sourceType' | 'verification' | 'created'
 
 // Map the sortable column to its PocketBase field (club/country are relation fields).
 const SORT_FIELD: Record<SortKey, string> = {
@@ -30,6 +31,7 @@ const SORT_FIELD: Record<SortKey, string> = {
   source: 'source_url',
   sourceType: 'source_type',
   verification: 'verification_status',
+  created: 'created',
 }
 
 function andFilter(...clauses: (string | false | undefined)[]): string {
@@ -63,6 +65,11 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
   const [exportBusy, setExportBusy] = useState(false)
   const countries = useCountries('contacts')
   const resetPage = () => setPage(1)
+  const filtersActive = [q, club, countryF, vsFilter, srcFilter].some(Boolean)
+  const resetFilters = () => {
+    setQ(''); setClub(''); clearUrlParam('club'); setCountryF(''); setVsFilter(''); setSrcFilter('')
+    resetPage()
+  }
 
   const debouncedQ = useDebouncedValue(q, 300)
   const filter = useMemo(
@@ -146,6 +153,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
             ))}
           </Select>
         </FilterPanel>
+        <ResetFiltersButton active={filtersActive} onReset={resetFilters} />
         <span className="ml-auto text-sm text-neutral-500">{totalItems.toLocaleString()} contacts{loading ? ' · loading…' : ''}</span>
         <ActionsMenu
           busy={exportBusy}
@@ -176,6 +184,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
               <TH sortable sorted={sortedOf('source')} onClick={() => toggleSort('source')}>From</TH>
               <TH sortable sorted={sortedOf('sourceType')} onClick={() => toggleSort('sourceType')}>Source</TH>
               <TH sortable sorted={sortedOf('verification')} onClick={() => toggleSort('verification')}>Verification</TH>
+              <TH sortable sorted={sortedOf('created')} onClick={() => toggleSort('created')}>Created</TH>
             </TR>
           </THead>
           <TBody>
@@ -217,6 +226,9 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
                   <Badge tone={c.verification_status === 'verified' ? 'green' : 'neutral'}>
                     {verificationLabel(c.verification_status || 'unverified')}
                   </Badge>
+                </TD>
+                <TD className="whitespace-nowrap text-xs text-neutral-500" title={c.created ? exactTime(c.created) : ''}>
+                  {relTime(c.created)}
                 </TD>
               </TR>
             ))}

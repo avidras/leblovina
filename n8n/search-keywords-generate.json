@@ -1,0 +1,85 @@
+{
+  "name": "Leblovina — Search keywords generate",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "search-keywords-generate", "responseMode": "lastNode", "options": {} },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-600, 0],
+      "webhookId": "search-keywords-generate"
+    },
+    {
+      "parameters": {
+        "assignments": { "assignments": [
+          { "id": "p", "name": "pbUrl", "value": "https://leblovina.tools.biceps.digital", "type": "string" }
+        ] },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-440, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-280, 0],
+      "credentials": { "httpCustomAuth": { "id": "hzdBwrAqrPZjDmME", "name": "PocketBase admin (api)" } }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "anthropic-version", "value": "2023-06-01" } ] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 1800, messages: [ { role: 'user', content: 'Generate web-search queries to find the official websites of INDIVIDUAL volleyball CLUBS in ' + (($('Webhook').item.json.body||{}).country || '') + '. Use the LOCAL language(s) of that country for the volleyball term (Italy: pallavolo; Germany/Austria/Switzerland: Volleyball; Poland: siatkowka; Spain: voleibol; France: volley-ball; Greece: petosfairisi). Combine the volleyball term with club words (club / societa / Verein / klub / academy / youth / sezione / asd) AND with major cities and regions. ' + ((($('Webhook').item.json.body||{}).cities && ($('Webhook').item.json.body||{}).cities.length) ? ('Use these cities: ' + (($('Webhook').item.json.body||{}).cities).join(', ') + '.') : 'Choose the ~25 largest cities and main regions of the country yourself.') + ' Produce about ' + ((($('Webhook').item.json.body||{}).count) || 40) + ' DISTINCT queries, each likely to surface a single club own site (NOT federations, leagues, results/stats, news or directories). Respond ONLY with compact JSON {\"keywords\":[{\"q\":string,\"lang\":string}]} where lang is the 2-letter language code of q. No prose, no code fences.' } ] }) }}",
+        "options": { "timeout": 60000 }
+      },
+      "id": "gen",
+      "name": "Generate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-120, 0],
+      "onError": "continueRegularOutput",
+      "credentials": { "anthropicApi": { "id": "PsTv3b7j6pP2jeMt", "name": "Anthropic (leblovina)" } }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst body=($('Webhook').first().json.body)||{};\nconst country=String(body.country||'').trim();\nlet kws=[];\ntry{ const resp=$('Generate').first().json; const txt=(resp&&resp.content&&resp.content[0]&&resp.content[0].text)||''; const o=JSON.parse(String(txt).replace(/```json/gi,'').replace(/```/g,'').trim()); kws=Array.isArray(o.keywords)?o.keywords:[]; }catch(e){}\nlet created=0, dup=0;\nfor(const k of kws){ const q=String((k&&k.q)||'').trim(); if(!q) continue; const lang=String((k&&k.lang)||'').trim().slice(0,5);\n  try{ await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/search_keywords/records',headers:pbH,body:{keyword:q,country,lang,status:'pending',attempts:0},json:true}); created++; }\n  catch(e){ dup++; } }\nreturn [{json:{country,generated:kws.length,created,duplicates:dup}}];\n"
+      },
+      "id": "ups",
+      "name": "Upsert keywords",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [120, 0]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "PB Auth", "type": "main", "index": 0 }]] },
+    "PB Auth": { "main": [[{ "node": "Generate", "type": "main", "index": 0 }]] },
+    "Generate": { "main": [[{ "node": "Upsert keywords", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false,
+  "pinData": {},
+  "meta": { "templateId": "leblovina-search-keywords-generate" }
+}

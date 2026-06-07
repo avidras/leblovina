@@ -11,6 +11,7 @@ interface Stats {
   contacts: number; contactsClubSite: number; contactsDir: number
   queueQueued: number; queueDone: number
   byConf: ConfRow[]
+  searchClubs: number; searchContacts: number
 }
 
 function useStats(): Stats | null {
@@ -33,7 +34,13 @@ function useStats(): Stats | null {
           clubs: await n('clubs', `federation.confederation='${conf}'`),
           contacts: await n('contacts', `club.federation.confederation='${conf}'`),
         })))
-        if (alive) setS({ feds, fedsScraped, clubs, clubsSite, clubsScraped, contacts, contactsClubSite, contactsDir, queueQueued, queueDone, byConf })
+        // search-led discovery ("No federation – Google") — its confederation is blank,
+        // so count it separately by provenance. See specs/search-led-discovery.md.
+        const [searchClubs, searchContacts] = await Promise.all([
+          n('clubs', "website_source='search'"),
+          n('contacts', "club.website_source='search'"),
+        ])
+        if (alive) setS({ feds, fedsScraped, clubs, clubsSite, clubsScraped, contacts, contactsClubSite, contactsDir, queueQueued, queueDone, byConf, searchClubs, searchContacts })
       } catch { /* non-fatal */ }
     })()
     return () => { alive = false }
@@ -100,6 +107,13 @@ export function DashboardPage({ onNavigate }: { onNavigate: (v: NavView) => void
                     <td className="px-4 py-2 text-right tabular-nums">{r.contacts.toLocaleString()}</td>
                   </tr>
                 ))}
+                {s.searchClubs > 0 && (
+                  <tr className="border-b border-neutral-100 last:border-0 bg-neutral-50/60">
+                    <td className="px-4 py-2 font-medium text-neutral-800">No federation (search)</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{s.searchClubs.toLocaleString()}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{s.searchContacts.toLocaleString()}</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -144,6 +158,7 @@ const STEPS: { title: string; body: string; tools: string }[] = [
   { title: "Start from the world's federations", body: 'We load every national volleyball federation from the sport’s official global directory — the master list we work down from.', tools: 'FIVB official data feed' },
   { title: "Find each federation's club list", body: 'For every federation we locate its official directory of member clubs online, wherever it lives.', tools: 'AI agent + web search (Serper)' },
   { title: 'Extract the clubs', body: 'We read those directories — web pages, PDFs, or the platforms federations run on — and pull out every club with its town/region and any email or website listed.', tools: 'Firecrawl (page rendering), AI reading (Claude / Gemini), platform APIs & PDF parsing' },
+  { title: 'Discover clubs beyond the directories', body: 'Many real clubs aren’t in any federation list (academies, beach/recreational/university clubs, or whole countries with no usable directory). We search the open web with localized queries, then a strict AI classifier keeps only pages that are genuinely a single club’s own site — rejecting federations, leagues, news, shops and aggregators. New clubs land under “No federation – Google” for review and go straight into contact gathering. Existing sites are skipped (deduped by web address).', tools: 'Web search (Serper) + strict AI club classifier (Claude)' },
   { title: 'Find the missing websites', body: 'For clubs with no website listed, we search the web and verify which result is genuinely that club’s own site (not a directory, news page or aggregator).', tools: 'Web search (Serper) + AI relevance check (Claude)' },
   { title: 'Gather the contacts', body: 'We visit each club’s own website and collect contact emails — plus names and roles where shown — while filtering out website-builder and agency noise.', tools: 'Firecrawl + direct fetch, AI extraction (Gemini), Apify for tougher sites' },
   { title: 'Make names readable', body: 'Clubs written in other alphabets (Cyrillic, Greek, and more) get a clear English/Latin version alongside the original.', tools: 'AI transliteration (Gemini)' },
