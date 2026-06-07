@@ -54,6 +54,12 @@ export type WebsiteSource = 'official_list' | 'serper' | 'manual' | 'none'
 export type WebsiteStatus = 'unknown' | 'live' | 'dead' | 'not_found'
 export const WEBSITE_STATUSES: WebsiteStatus[] = ['unknown', 'live', 'dead', 'not_found']
 
+// Orthogonal to website_status (reachability): does the resolved site belong to
+// THIS club? A = trusted, B = probable, C = low confidence (review). See
+// specs/club-website-belongs-check.md.
+export type WebsiteConfidence = 'unknown' | 'A' | 'B' | 'C'
+export const WEBSITE_CONFIDENCES: WebsiteConfidence[] = ['unknown', 'A', 'B', 'C']
+
 // Mirrors the `clubs` collection schema.
 export interface Club {
   id: string
@@ -65,6 +71,7 @@ export interface Club {
   website_url: string
   website_source: WebsiteSource | ''
   website_status: 'unknown' | 'live' | 'dead' | 'not_found' | ''
+  website_confidence: WebsiteConfidence | ''
   source_url: string
   detail_url: string
   source_club_id: string

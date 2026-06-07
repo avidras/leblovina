@@ -92,7 +92,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const club = $('Get Club').first().json;\nconst url = (club.website_url || '').trim();\nconst isLive = (c) => (c >= 200 && c < 400) || c === 401 || c === 403 || c === 429; // exists (maybe bot-blocked)\nlet live = false;\nif (url) {\n  try {\n    const res = await this.helpers.httpRequest({ method:'GET', url, timeout:8000, returnFullResponse:true, ignoreHttpStatusErrors:true, followRedirect:true, headers:{'User-Agent':'Mozilla/5.0 (compatible; leblovina)'} });\n    live = isLive(res.statusCode || 0);\n  } catch(e) { live = false; }   // DNS fail / timeout / refused -> dead\n}\nconst stop = new Set(['volley','volleyball','voley','voleibol','pallavolo','club','clube','klub','kluby','asd','ssd','polisportiva','associazione','association','sportiva','sport','sports','team','siatkowki','siatkowka','the','de','di','del','la','el','of','and','vc','cv','vbc','vk']);\nconst tokens = String(club.name||'').toLowerCase().normalize('NFD').replace(/\\p{M}/gu,'').replace(/[^\\p{L}\\p{N}\\s]/gu,' ').split(/\\s+/).filter(t => t.length>=3 && !stop.has(t));\nconst q = [club.name, club.city, club.country, 'volleyball'].filter(Boolean).join(' ');\nconst src = String(club.website_source||'');\nconst force = !!(($('Webhook').first().json.body)||{}).force;   // 'resolve all' re-resolves auto/empty-sourced clubs even if currently live\nconst protectedSrc = (src==='official_list' || src==='manual');\nconst needsResolve = (force && !protectedSrc) ? true : !live;\nreturn [{ json: { clubId: club.id, name: club.name, city: club.city, country: club.country, currentUrl: url, live, needsResolve, nameTokens: tokens, query: q } }];\n"
+        "jsCode": "const club = $('Get Club').first().json;\nconst url = (club.website_url || '').trim();\nconst isLive = (c) => (c >= 200 && c < 400) || c === 401 || c === 403 || c === 429; // exists (maybe bot-blocked)\nlet live = false;\nif (url) {\n  try {\n    const res = await this.helpers.httpRequest({ method:'GET', url, timeout:8000, returnFullResponse:true, ignoreHttpStatusErrors:true, followRedirect:true, headers:{'User-Agent':'Mozilla/5.0 (compatible; leblovina)'} });\n    live = isLive(res.statusCode || 0);\n  } catch(e) { live = false; }   // DNS fail / timeout / refused -> dead\n}\nconst stop = new Set(['volley','volleyball','voley','voleibol','pallavolo','club','clube','klub','kluby','asd','ssd','polisportiva','associazione','association','sportiva','sport','sports','team','siatkowki','siatkowka','the','de','di','del','la','el','of','and','vc','cv','vbc','vk']);\nconst tokens = String(club.name||'').toLowerCase().normalize('NFD').replace(/\\p{M}/gu,'').replace(/[^\\p{L}\\p{N}\\s]/gu,' ').split(/\\s+/).filter(t => t.length>=3 && !stop.has(t));\nconst q = [club.name, club.city, club.country, 'volleyball'].filter(Boolean).join(' ');\nconst src = String(club.website_source||'');\nconst force = !!(($('Webhook').first().json.body)||{}).force;   // 'resolve all' re-resolves auto/empty-sourced clubs even if currently live\nconst recheck = !!(($('Webhook').first().json.body)||{}).recheck;   // belongs-check an existing live serper URL without re-spending Serper\nconst protectedSrc = (src==='official_list' || src==='manual');\nconst needsResolve = (force && !protectedSrc) ? true : !live;\nreturn [{ json: { clubId: club.id, name: club.name, city: club.city, country: club.country, currentUrl: url, currentSource: src, live, needsResolve, recheck, nameTokens: tokens, query: q } }];\n"
       },
       "id": "val",
       "name": "Validate",
@@ -134,10 +134,10 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const PB_URL = ($('Config').first().json.pbUrl || '').replace(/\\/+$/, '');\nconst token = $('PB Auth').first().json.token; const pbH = { Authorization: token };\nconst v = $('Validate').first().json; const clubId = v.clubId;\nconst patch = (body) => this.helpers.httpRequest({ method:'PATCH', url:PB_URL+'/api/collections/clubs/records/'+clubId, headers:pbH, body, json:true });\nconst isLive = (c) => (c >= 200 && c < 400) || c === 401 || c === 403 || c === 429;\nconst hostOf = (u) => String(u||'').replace(/^https?:\\/\\//i,'').replace(/^www\\./i,'').split(/[\\/?#]/)[0].toLowerCase();\n\nif (!v.needsResolve) { await patch({ website_status:'live' }); return [{ json:{ ok:true, clubId, action:'live', url:v.currentUrl } }]; }\n\nconst organic = ($('Serper Search').first().json.organic) || [];\nconst candidateHosts = new Set(organic.map(r=>hostOf(r.link)).filter(Boolean));\n// safety net — the LLM should already avoid these, but never accept them\nconst blocked = /(facebook|instagram|twitter|x\\.com|linkedin|youtube|tiktok|wikipedia|volleybox|sofascore|flashscore|transfermarkt|eurosport|maps\\.google|google\\.|tripadvisor|yelp|amazon|ticketmaster|eventim|ticketportal|ticketpro|spordiregister|rejstrik|\\.gov)/i;\n\nlet raw = String(($('Pick site').first().json||{}).output || '').trim().replace(/^```(json)?/i,'').replace(/```\\s*$/,'').trim();\nlet pick=''; try { const o=JSON.parse(raw); pick=String(o.url||'').trim(); } catch(e){ const m=raw.match(/https?:\\/\\/[^\\s\"'}]+/); pick=m?m[0]:''; }\n\nlet chosen='';\nif (pick && /^https?:\\/\\//i.test(pick)) {\n  const host = hostOf(pick);\n  // only trust a host the LLM actually saw in the results (no hallucinated domains), and not blocked\n  if (host && candidateHosts.has(host) && !blocked.test(host)) {\n    const cand='https://'+host;\n    try { const res=await this.helpers.httpRequest({ method:'GET', url:cand, timeout:8000, returnFullResponse:true, ignoreHttpStatusErrors:true, followRedirect:true, headers:{'User-Agent':'Mozilla/5.0 (compatible; leblovina)'} }); if(isLive(res.statusCode||0)) chosen=cand; } catch(e){}\n  }\n}\nif (chosen) { await patch({ website_url:chosen, website_source:'serper', website_status:'live' }); return [{ json:{ ok:true, clubId, action:'resolved', url:chosen } }]; }\nconst status = v.currentUrl ? 'dead' : 'not_found';\nawait patch({ website_url:'', website_source:'none', website_status:status });\nreturn [{ json:{ ok:true, clubId, action:status, pick } }];\n"
+        "jsCode": "const v = $('Validate').first().json;\nconst club = $('Get Club').first().json;\nconst clubId = v.clubId;\nconst curSource = String(v.currentSource||'');\nconst isLive = (c) => (c >= 200 && c < 400) || c === 401 || c === 403 || c === 429;\nconst hostOf = (u) => String(u||'').replace(/^https?:\\/\\//i,'').replace(/^www\\./i,'').split(/[\\/?#]/)[0].toLowerCase();\nlet chosen='', source=curSource, status='live', resolved=false, body='';\nif (!v.needsResolve) {\n  chosen = v.currentUrl; status = 'live';\n} else {\n  const organic = ($('Serper Search').first().json.organic) || [];\n  const candidateHosts = new Set(organic.map(r=>hostOf(r.link)).filter(Boolean));\n  const blocked = /(facebook|instagram|twitter|x\\.com|linkedin|youtube|tiktok|wikipedia|volleybox|sofascore|flashscore|transfermarkt|eurosport|maps\\.google|google\\.|tripadvisor|yelp|amazon|ticketmaster|eventim|ticketportal|ticketpro|spordiregister|rejstrik|\\.gov)/i;\n  let raw = String(($('Pick site').first().json||{}).output || '').trim().replace(/^```(json)?/i,'').replace(/```\\s*$/,'').trim();\n  let pick=''; try { const o=JSON.parse(raw); pick=String(o.url||'').trim(); } catch(e){ const m=raw.match(/https?:\\/\\/[^\\s\"'}]+/); pick=m?m[0]:''; }\n  if (pick && /^https?:\\/\\//i.test(pick)) {\n    const host = hostOf(pick);\n    if (host && candidateHosts.has(host) && !blocked.test(host)) {\n      const cand='https://'+host;\n      try { const res=await this.helpers.httpRequest({ method:'GET', url:cand, timeout:8000, returnFullResponse:true, ignoreHttpStatusErrors:true, followRedirect:true, headers:{'User-Agent':'Mozilla/5.0 (compatible; leblovina)'} }); if(isLive(res.statusCode||0)){ chosen=cand; body=String(res.body||''); } } catch(e){}\n    }\n  }\n  if (chosen) { source='serper'; status='live'; resolved=true; }\n  else { chosen=''; source='none'; status = v.currentUrl ? 'dead' : 'not_found'; }\n}\n// Baseline confidence: trusted provenance is A without a content check.\nlet confidence = '';\nif (status==='live' && (curSource==='official_list' || curSource==='manual') && !resolved) confidence='A';\n// Belongs-check runs only on serper-sourced live sites (just-resolved, or recheck of an existing one).\nconst belongsApplies = (status==='live') && (source==='serper') && (resolved || v.recheck) && !!chosen;\nlet verdict='done', page=null;\nif (belongsApplies) {\n  if (!body) { try { const res=await this.helpers.httpRequest({ method:'GET', url:chosen, timeout:8000, returnFullResponse:true, ignoreHttpStatusErrors:true, followRedirect:true, headers:{'User-Agent':'Mozilla/5.0 (compatible; leblovina)'} }); body=String(res.body||''); } catch(e){} }\n  const norm = (s)=>String(s||'').toLowerCase().normalize('NFD').replace(/\\p{M}/gu,'');\n  const grab = (re)=>{ const m=body.match(re); return m?m[1]:''; };\n  const title = grab(/<title[^>]*>([\\s\\S]*?)<\\/title>/i);\n  const ogSite = grab(/<meta[^>]+property=[\"']og:site_name[\"'][^>]+content=[\"']([^\"']*)[\"']/i);\n  const ogTitle = grab(/<meta[^>]+property=[\"']og:title[\"'][^>]+content=[\"']([^\"']*)[\"']/i);\n  const h1 = grab(/<h1[^>]*>([\\s\\S]*?)<\\/h1>/i).replace(/<[^>]+>/g,' ');\n  const head = norm(title+' '+ogSite+' '+ogTitle+' '+h1);\n  const text = norm(body.replace(/<script[\\s\\S]*?<\\/script>/gi,' ').replace(/<style[\\s\\S]*?<\\/style>/gi,' ').replace(/<[^>]+>/g,' ')).replace(/\\s+/g,' ').slice(0,6000);\n  const tokens = Array.isArray(v.nameTokens) ? v.nameTokens : [];\n  const headHit = tokens.some(t => head.includes(t));\n  const bodyHit = tokens.some(t => text.includes(t));\n  const CC = {'albania':'al','andorra':'ad','armenia':'am','austria':'at','azerbaijan':'az','belarus':'by','belgium':'be','bosnia and herzegovina':'ba','bulgaria':'bg','croatia':'hr','cyprus':'cy','czech republic':'cz','czechia':'cz','denmark':'dk','estonia':'ee','finland':'fi','france':'fr','georgia':'ge','germany':'de','greece':'gr','hungary':'hu','iceland':'is','ireland':'ie','israel':'il','italy':'it','kosovo':'xk','latvia':'lv','liechtenstein':'li','lithuania':'lt','luxembourg':'lu','malta':'mt','moldova':'md','monaco':'mc','montenegro':'me','netherlands':'nl','north macedonia':'mk','norway':'no','poland':'pl','portugal':'pt','romania':'ro','russia':'ru','san marino':'sm','serbia':'rs','slovakia':'sk','slovenia':'si','spain':'es','sweden':'se','switzerland':'ch','turkey':'tr','ukraine':'ua','united kingdom':'uk'};\n  const host2 = hostOf(chosen);\n  const tld = host2.split('.').pop();\n  const cc = CC[String(club.country||'').toLowerCase().trim()];\n  const ccMatch = !!cc && (tld===cc || host2.endsWith('.'+cc));\n  const geoText = (club.country && text.includes(norm(club.country))) || (club.city && String(club.city).length>=3 && text.includes(norm(club.city)));\n  const geo = ccMatch || geoText;\n  const dom = host2.replace(/[^a-z0-9]/g,'');\n  const domHit = tokens.some(t => { const tt=norm(t).replace(/[^a-z0-9]/g,''); return tt.length>=3 && dom.includes(tt); });\n  const parked = /(domain (is |may be )?for sale|buy this domain|this domain is for sale|sedoparking|hugedomains|parking-?lander|godaddy)/i.test(body);\n  const linkCount = (body.match(/<a\\b/gi)||[]).length;\n  const directoryish = linkCount>120 && !headHit;\n  if (parked || directoryish) { verdict='hardfail'; confidence='C'; }\n  else if (headHit && (geo || domHit)) { verdict='strong'; confidence='A'; }\n  else { verdict='ambiguous'; }\n  page = { title: title.replace(/\\s+/g,' ').trim().slice(0,200), ogSite: ogSite.slice(0,200), h1: h1.replace(/\\s+/g,' ').trim().slice(0,200), excerpt: text.slice(0,1800), headHit, bodyHit, geo, domHit };\n}\nconst routeAmbiguous = (verdict==='ambiguous');\nreturn [{ json: { clubId, chosen, source, status, confidence, verdict, routeAmbiguous, page, name: v.name, city: v.city, country: v.country } }];\n"
       },
       "id": "fin",
-      "name": "Finalize",
+      "name": "Resolve site",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -156,7 +156,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1000,
+        1560,
         0
       ]
     },
@@ -201,6 +201,93 @@
       "position": [
         460,
         200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.routeAmbiguous }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ifamb",
+      "name": "Ambiguous?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1000,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 200, messages: [ { role: 'user', content: 'Decide whether a web page is the official website of THIS specific volleyball club. Club: ' + JSON.stringify({name: $json.name, city: $json.city, country: $json.country}) + '. Page signals: ' + JSON.stringify($json.page) + '. Answer ONLY with compact JSON {\"belongs\":\"yes\"|\"no\"|\"unsure\",\"confidence\":0,\"reason\":\"\"}. Say yes only if this is this clubs own official site (same club, same city and country) - not a namesake club elsewhere, a league or results page, a directory, or an aggregator.' } ] }) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "belong",
+      "name": "Belongs check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1180,
+        -140
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "anthropicApi": {
+          "id": "PsTv3b7j6pP2jeMt",
+          "name": "Anthropic (leblovina)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL = ($('Config').first().json.pbUrl || '').replace(/\\/+$/, '');\nconst token = $('PB Auth').first().json.token; const pbH = { Authorization: token };\nconst r = $('Resolve site').first().json; const clubId = r.clubId;\nlet conf = r.confidence || '';\nif (r.verdict === 'ambiguous') {\n  let belongs = 'unsure';\n  try {\n    const resp = $('Belongs check').first().json;\n    const txt = (resp && resp.content && resp.content[0] && resp.content[0].text) || '';\n    const o = JSON.parse(String(txt).replace(/```json/gi,'').replace(/```/g,'').trim());\n    belongs = String(o.belongs||'unsure').toLowerCase();\n  } catch(e) {}\n  conf = (belongs === 'yes') ? 'B' : 'C';\n}\nconst body = { website_url: r.chosen, website_source: r.source, website_status: r.status };\nif (conf) body.website_confidence = conf;\nawait this.helpers.httpRequest({ method:'PATCH', url:PB_URL+'/api/collections/clubs/records/'+clubId, headers:pbH, body, json:true });\nconst action = !r.chosen ? r.status : ((r.source!=='serper') ? 'live' : 'resolved');\nreturn [{ json: { ok:true, clubId, action, url:r.chosen, confidence: conf||'unknown' } }];\n"
+      },
+      "id": "patch",
+      "name": "Patch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        0
       ]
     }
   ],
@@ -271,22 +358,11 @@
         ]
       ]
     },
-    "Finalize": {
-      "main": [
-        [
-          {
-            "node": "Respond",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Pick site": {
       "main": [
         [
           {
-            "node": "Finalize",
+            "node": "Resolve site",
             "type": "main",
             "index": 0
           }
@@ -299,6 +375,57 @@
           {
             "node": "Pick site",
             "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve site": {
+      "main": [
+        [
+          {
+            "node": "Ambiguous?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ambiguous?": {
+      "main": [
+        [
+          {
+            "node": "Belongs check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Patch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Belongs check": {
+      "main": [
+        [
+          {
+            "node": "Patch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Patch": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
             "index": 0
           }
         ]

@@ -131,6 +131,15 @@ site). Triggered as an **async batch from the Clubs page** over the current filt
 re-resolving known-dead/not_found clubs. Validation is cheap (can run freely); resolution is
 the cost to gate.
 
+3. **Belongs-check** (post-resolve) — after a **serper**-sourced site is resolved/validated
+   live, confirm it actually belongs to *this* club (not a namesake, league page, directory, or
+   parked domain). Runs on the page **already fetched** at resolve time (Tier-0 deterministic:
+   real-page name-token overlap, geo/ccTLD corroboration, domain-slug match, reject
+   directory/parked); only the ambiguous middle spends one Haiku call. Writes
+   `website_confidence` ∈ `A | B | C` (`C` = review); never deletes the URL. `official_list`/
+   `manual` are graded `A` by provenance without a check. See
+   [`club-website-belongs-check.md`](./club-website-belongs-check.md).
+
 ## `clubs` collection (migration)
 
 | field            | type     | notes |
@@ -143,6 +152,7 @@ the cost to gate.
 | website_url      | url      | may be empty until Stage 3 resolves it |
 | website_source   | select   | `official_list / serper / manual / none` (provenance of the URL) |
 | website_status   | select   | `unknown / live / dead / not_found` (Stage 3 validate+resolve outcome) |
+| website_confidence | select | `unknown / A / B / C` — post-resolve "belongs to club?" check (serper URLs only). See [`club-website-belongs-check.md`](./club-website-belongs-check.md) |
 | source_url       | url      | the directory page this club was scraped from (provenance) |
 | source_club_id   | text     | source's own id/code if any (Italy codice, PB id, …) |
 | dedup_key        | text     | **required, unique** — see decision 4 |

@@ -33,6 +33,13 @@ Project context and conventions for Claude Code. Read this fully before making c
   under `.claude/docs/`, update that doc in the same change. If you add a new cross-cutting
   rule or topic area, add it to the relevant doc (or create one under `.claude/docs/`) and
   link it from this file.
+- **Apply n8n workflow changes to the live instance automatically.** Whenever you edit a
+  workflow JSON under `n8n/`, you (Claude) **PUT it to the live n8n instance via the API**
+  using `N8N_BASE_URL` + `N8N_API_KEY` from `.env` — in the same change, without waiting to
+  be asked and without expecting a human to import it. The committed export and the deployed
+  workflow must never drift. (Schema migrations are different: those auto-apply on deploy via
+  `pb_migrations/` — do **not** hand-create prod schema via the PB API unless explicitly
+  asked.) See "Managing deployed workflows directly" below.
 
 ## Project: Volleyball club lead-gen — app & database
 
@@ -163,6 +170,7 @@ See `specs/club-discovery.md`. Discovered via an agentic, search-led, tiered pip
 | website_url    | url      | may be empty until Serper resolves it (Stage 3) |
 | website_source | select   | official_list / serper / manual / none — URL provenance |
 | website_status | select   | unknown / live / dead / not_found — Stage 3 validate+resolve outcome |
+| website_confidence | select | unknown / A / B / C — post-resolve "does this site belong to the club?" check (serper URLs only; A=trusted, B=probable, C=review). Orthogonal to website_status. See `specs/club-website-belongs-check.md` |
 | source_url     | url      | the directory page the club came from |
 | detail_url     | url      | the catalog's per-club detail page (richer contact data for Phase 3), if any. The html extractor backfills it from each club's listing link (LLM + deterministic link-map fallback) |
 | source_club_id | text     | source's own id/code if any |
@@ -229,12 +237,14 @@ Enums:
 
 ### Managing deployed workflows directly (n8n + PocketBase APIs)
 
-The committed JSON exports under `n8n/` are **not** auto-applied — n8n only runs what's
-imported into the live instance. So a fix to an export does nothing until the deployed
-workflow is updated. **Use the credentials in the local `.env` to drive both APIs directly**
-— the same way for n8n as for PocketBase — to inspect, patch, and verify deployed workflows
-and data from the CLI (e.g. updating a Code node, then triggering the webhook to confirm).
-The `.env` is gitignored (never committed); these are operational creds, not app config.
+n8n only runs what's **imported into the live instance** — a committed export under `n8n/`
+does nothing on its own until the deployed workflow is updated. Therefore **Claude applies
+every `n8n/` change to the live instance via the API as part of the same change** (PUT the
+workflow; the committed export is the source, the live workflow must match it). **Use the
+credentials in the local `.env` to drive both APIs directly** — the same way for n8n as for
+PocketBase — to inspect, patch, and verify deployed workflows and data from the CLI (e.g.
+updating a Code node, then triggering the webhook to confirm). The `.env` is gitignored
+(never committed); these are operational creds, not app config.
 
 - **n8n public API** — `N8N_BASE_URL` + `N8N_API_KEY` (header `X-N8N-API-KEY`). List/get/PUT
   workflows at `$N8N_BASE_URL/api/v1/workflows[/{id}]`; trigger a workflow with
