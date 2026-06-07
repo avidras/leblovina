@@ -62,7 +62,10 @@ group on the dashboard). Search-discovered clubs set `federation` = this record.
   status:'needs_review', dedup_key:'search:<host>' }`. **Confidence `A`** — the strict classifier
   only accepts a confirmed single real volleyball-club's own site (anything ambiguous is rejected),
   so an accepted match is trusted, not merely probable. `club_type` comes from the classifier
-  (volleyball vs a multi-sport club with a volleyball section). `status='needs_review'` is the
+  (LLM, judged by what the **website** is about — **biased to `volleyball`** for any
+  volleyball-focused site incl. a larger Verein's volleyball section/Abteilung that has its own
+  site; `multisport` only for a genuine multi-sport portal. A crude regex over-called multisport
+  on German section sites, so type is the LLM's call, not a keyword match). `status='needs_review'` is the
   human-vetting gate (orthogonal to confidence).
 
 ## Workflows (n8n) — as built
