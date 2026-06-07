@@ -146,7 +146,7 @@ export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string
               key: 'process',
               label: 'Process federations',
               count: totalItems,
-              description: 'Discover → gate → extract every federation in the filter, in the background (~1/min). Spends LLM/Firecrawl/Serper credits.',
+              description: 'Searches for each federation’s club directory and extracts its clubs. Uses LLM, Firecrawl & Serper.',
               disabled: batchBusy || totalItems === 0,
               onSelect: batchProcess,
             },

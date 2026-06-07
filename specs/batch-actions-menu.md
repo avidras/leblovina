@@ -36,12 +36,13 @@ ActionsMenu({ actions: MenuAction[]; label?: string; busy?: boolean; align?: 'le
 
 ## File-level changes
 
-- **`src/features/clubs/ClubsPage.tsx`** — replace the five `Tooltip`+`Button` blocks with one
-  `<ActionsMenu busy={enrichBusy} actions={[…]} />`: Resolve unresolved `(unresolvedCount)`,
-  Re-resolve all `(totalItems)`, Re-check confidence `(recheckCount)`, Harvest all live
-  `(harvestCount)`, Romanize names (no count). Each `disabled` keeps its current condition;
-  descriptions are concise versions of the existing tooltip copy. Rename Englishize→Romanize in
-  the item label.
+- **`src/features/clubs/ClubsPage.tsx`** — replace the inline `Tooltip`+`Button` blocks with one
+  `<ActionsMenu busy={enrichBusy} actions={[…]} />`. Item labels are user-facing (plain language,
+  no "resolve"/"harvest" jargon): **Find missing websites** `(unresolvedCount)`, **Re-find all
+  websites** `(totalItems)`, **Re-check confidence** `(recheckCount)`, **Light contact scrape**
+  `(harvestCount)`, **Full site scrape** `(harvestCount)`, **Romanize names** (no count). The two
+  contact actions are labelled light vs full to distinguish the homepage-only harvest from the
+  whole-site crawl. Each `disabled` keeps its current condition.
 - **`src/features/federations/FederationsPage.tsx`** — replace the "Process N" `Tooltip`+`Button`
   with one `<ActionsMenu busy={batchBusy} actions={[{ Process federations, count: totalItems, … }]} />`.
 - **No change** to contacts (no batch actions) or to any trigger/confirm logic.
