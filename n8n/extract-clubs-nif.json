@@ -1,0 +1,106 @@
+{
+  "name": "Leblovina — Extract clubs (NIF ClubSearch / NOR)",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "extract-clubs-nif", "responseMode": "onReceived", "options": {} },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-600, 0],
+      "webhookId": "extract-clubs-nif"
+    },
+    {
+      "parameters": {
+        "assignments": { "assignments": [
+          { "id": "p", "name": "pbUrl", "value": "https://leblovina.tools.biceps.digital", "type": "string" },
+          { "id": "a", "name": "activityId", "value": "38", "type": "string" }
+        ] },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-440, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-280, 0],
+      "credentials": { "httpCustomAuth": { "id": "hzdBwrAqrPZjDmME", "name": "PocketBase admin (api)" } }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const activityId=parseInt($('Config').first().json.activityId||'38',10);\nconst fedId=(($('Webhook').first().json.body)||{}).id||'s2dfts98qyvmew2';\nconst PER=100;\nconst r=await this.helpers.httpRequest({method:'POST',url:'https://restdistribution.nif.no/api/v1/ClubSearch',headers:{'Content-Type':'application/json','User-Agent':'Mozilla/5.0'},body:{ClubName:'',RegionId:0,ActivityId:activityId,PageSize:PER,Index:0},json:true});\nconst total=r.Count||0; const pages=Math.max(1,Math.ceil(total/PER));\nconst out=[]; for(let i=0;i<pages;i++) out.push({json:{index:i,per:PER,activityId,fedId,total}});\nreturn out;\n"
+      },
+      "id": "pages",
+      "name": "Pages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-120, 0]
+    },
+    {
+      "parameters": { "batchSize": 1, "options": {} },
+      "id": "loop",
+      "name": "Loop",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [60, 0]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst fedId=$json.fedId; const index=$json.index; const per=$json.per; const activityId=$json.activityId;\nconst now=new Date().toISOString();\nconst findClub=async(k)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:\"(dedup_key='\"+k+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nconst r=await this.helpers.httpRequest({method:'POST',url:'https://restdistribution.nif.no/api/v1/ClubSearch',headers:{'Content-Type':'application/json','User-Agent':'Mozilla/5.0'},body:{ClubName:'',RegionId:0,ActivityId:activityId,PageSize:per,Index:index},json:true});\nconst clubs=r.Clubs||[]; let created=0;\nfor(const c of clubs){ const oid=c.OrgId; if(!oid)continue; const name=String(c.OrgName||c.DescribingName||'').trim(); if(!name)continue;\n  const dedup='NOR:'+oid;\n  const base={federation:fedId,name,country:'Norway',region:String(c.LocalCouncil||''),city:String(c.City||''),source_url:'https://www.minidrett.no/idrettslag',source_club_id:String(oid),dedup_key:dedup,last_scraped:now};\n  try{ try{await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/clubs/records',headers:pbH,body:Object.assign({},base,{website_source:'none',status:'new'}),json:true});created++;}\n    catch(e){const ex=await findClub(dedup); if(ex){await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/clubs/records/'+ex.id,headers:pbH,body:base,json:true});}else throw e;} }\n  catch(e){continue;}\n}\nreturn [{json:{index,clubs:clubs.length,created}}];\n"
+      },
+      "id": "up",
+      "name": "Upsert page",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 120],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst fedId=(($('Webhook').first().json.body)||{}).id||'s2dfts98qyvmew2';\nconst r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:'federation=\"'+fedId+'\"',perPage:1},headers:pbH,json:true});\nconst n=r.totalItems||0;\nawait this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/federations/records/'+fedId,headers:pbH,body:{status:(n>0?'scraped':'needs_review'),club_count:n,last_scraped:new Date().toISOString()},json:true});\nreturn [{json:{ok:true,clubs:n}}];\n"
+      },
+      "id": "fin",
+      "name": "Finalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, -140]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "PB Auth", "type": "main", "index": 0 }]] },
+    "PB Auth": { "main": [[{ "node": "Pages", "type": "main", "index": 0 }]] },
+    "Pages": { "main": [[{ "node": "Loop", "type": "main", "index": 0 }]] },
+    "Loop": { "main": [
+      [{ "node": "Finalize", "type": "main", "index": 0 }],
+      [{ "node": "Upsert page", "type": "main", "index": 0 }]
+    ] },
+    "Upsert page": { "main": [[{ "node": "Loop", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false,
+  "pinData": {},
+  "meta": { "templateId": "leblovina-extract-nif" }
+}

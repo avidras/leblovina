@@ -1,0 +1,105 @@
+{
+  "name": "Leblovina — Extract clubs (DataProject teams)",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "extract-clubs-dataproject", "responseMode": "onReceived", "options": {} },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-600, 0],
+      "webhookId": "extract-clubs-dataproject"
+    },
+    {
+      "parameters": {
+        "assignments": { "assignments": [
+          { "id": "p", "name": "pbUrl", "value": "https://leblovina.tools.biceps.digital", "type": "string" }
+        ] },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-440, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-280, 0],
+      "credentials": { "httpCustomAuth": { "id": "hzdBwrAqrPZjDmME", "name": "PocketBase admin (api)" } }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Reusable DataProject extractor. Body: {id, dpHost, fedcode, country, comps:[ids]}.\n// Defaults target Ukraine (uvf-web). dpHost = subdomain before .dataproject.com.\nconst body=($('Webhook').first().json.body)||{};\nconst PROFILES={\n  UKR:{id:'ubgjkrp9ofl0wxy',dpHost:'uvf-web',country:'Ukraine',comps:[162,163,164,165,166,167,168,169,170,181,182,171,172,173,174,175,176,177,178,179,180]},\n  ALB:{id:'rusimnfot1yulwz',dpHost:'fshv-web',country:'Albania',comps:[108,114,115,116,117,122]}\n};\nconst fedcode=(body.fedcode||'UKR').toUpperCase();\nconst prof=PROFILES[fedcode]||{};\nconst fedId=body.id||prof.id;\nconst dpHost=body.dpHost||prof.dpHost;\nconst country=body.country||prof.country||'';\nconst comps=(body.comps&&body.comps.length?body.comps:prof.comps)||[];\nreturn comps.map(c=>({json:{comp:c,fedId,dpHost,country,fedcode}}));\n"
+      },
+      "id": "comps",
+      "name": "Competitions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-120, 0]
+    },
+    {
+      "parameters": { "batchSize": 1, "options": {} },
+      "id": "loop",
+      "name": "Loop",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [60, 0]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst {comp,fedId,dpHost,country,fedcode}=$json;\nconst now=new Date().toISOString();\nconst findClub=async(k)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:\"(dedup_key='\"+k+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nlet html='';\ntry{html=await this.helpers.httpRequest({method:'GET',url:'https://'+dpHost+'.dataproject.com/CompetitionTeamSearch.aspx?ID='+comp,headers:{'User-Agent':'Mozilla/5.0'}});}catch(e){return [{json:{comp,error:'fetch:'+e.message}}];}\nif(typeof html!=='string') html=String(html);\n// team name lives in the logo img title; team id in TeamLogo_<id>.jpg within the same img tag\nconst decode=(s)=>String(s).replace(/&quot;/g,'\"').replace(/&#0?39;/g,\"'\").replace(/&apos;/g,\"'\").replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&#(\\d+);/g,(m,n)=>String.fromCharCode(+n));\nconst re=/title=\"([^\"]+)\"[^>]*TeamLogo_(\\d+)\\.jpg/g; let m; const seen={}; const teams=[];\nwhile((m=re.exec(html))!==null){const name=decode(m[1]).replace(/\\s+/g,' ').trim(); const tid=m[2]; if(!name||seen[tid])continue; seen[tid]=1; teams.push({tid,name});}\nlet created=0;\nfor(const t of teams){ const dedup=fedcode+':'+t.tid; const base={federation:fedId,name:t.name,country,source_url:'https://'+dpHost+'.dataproject.com/CompetitionTeamSearch.aspx?ID='+comp,source_club_id:t.tid,dedup_key:dedup,last_scraped:now};\n  try{ try{await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/clubs/records',headers:pbH,body:Object.assign({},base,{website_source:'none',status:'new'}),json:true});created++;}\n    catch(e){const ex=await findClub(dedup); if(ex){await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/clubs/records/'+ex.id,headers:pbH,body:base,json:true});}else throw e;} }\n  catch(e){continue;}\n}\nreturn [{json:{comp,teams:teams.length,created}}];\n"
+      },
+      "id": "up",
+      "name": "Upsert competition",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 120],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst body=($('Webhook').first().json.body)||{};\nconst fedId=body.id||'ubgjkrp9ofl0wxy';\nconst r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:'federation=\"'+fedId+'\"',perPage:1},headers:pbH,json:true});\nconst n=r.totalItems||0;\nawait this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/federations/records/'+fedId,headers:pbH,body:{status:(n>0?'scraped':'needs_review'),club_count:n,last_scraped:new Date().toISOString()},json:true});\nreturn [{json:{ok:true,clubs:n}}];\n"
+      },
+      "id": "fin",
+      "name": "Finalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, -140]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "PB Auth", "type": "main", "index": 0 }]] },
+    "PB Auth": { "main": [[{ "node": "Competitions", "type": "main", "index": 0 }]] },
+    "Competitions": { "main": [[{ "node": "Loop", "type": "main", "index": 0 }]] },
+    "Loop": { "main": [
+      [{ "node": "Finalize", "type": "main", "index": 0 }],
+      [{ "node": "Upsert competition", "type": "main", "index": 0 }]
+    ] },
+    "Upsert competition": { "main": [[{ "node": "Loop", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false,
+  "pinData": {},
+  "meta": { "templateId": "leblovina-extract-dataproject" }
+}

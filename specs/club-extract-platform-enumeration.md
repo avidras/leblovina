@@ -34,15 +34,47 @@ HTML page listing every club with a 7-digit code, name, `mailto:` email, and web
 > but that field only exists on `clubs` — PB silently drops it. Harmless (`status` +
 > `club_count` persist). If a fed-level run note is ever wanted, write to `notes` instead.
 
-## Open leads (the user's other 3 high-potential feds — start here next session)
+### NOR — NIF MinIdrett ClubSearch  (`extract-clubs-nif` zA8cUjhYy1469qHl | `/webhook/extract-clubs-nif`)
+`volleyball.no/klubboversikt` embeds the national NIF registry (`minidrett.no/idrettslag`). Real
+backend: **`POST restdistribution.nif.no/api/v1/ClubSearch`** with
+`{ClubName:'',RegionId:0,ActivityId:38,PageSize:100,Index:N}` — **ActivityId 38 = Volleyball**,
+keyless, paginated (`Count`=311). Returns name/city/zip/LocalCouncil; **no email/website**
+(`ClubDetails` needs auth → 401). Swagger: `restdistribution.nif.no/swagger/docs/v1`. dedup
+`NOR:<OrgId>`. **0 → 311 clubs.** Found via Apify puppeteer-scraper capturing the live XHRs.
 
-- **SWE (Sweden)** — `volleyboll.se` on **Profixio**. Find-a-club page points at
-  `profixio.com/fx/terminliste.php?org=SVBF.SE.SVB` (**org `SVBF.SE.SVB`**). Find Profixio's
-  club-registry endpoint for that org (try `profixio.com/app/...` JSON / club list) and
-  enumerate. Profixio is Nordic → likely reusable for NOR.
-- **SVK (Slovakia)** — `slovakvolley.sk` is a Next.js SPA on **eliterro**; API host
-  `api.volley.eliterro.sk`. `/api/club|clubs|kluby|team|teams|oddiel` → 404. Inspect the
-  SPA bundle / `_next/data/*.json` for the adresare route to find the real club endpoint.
-- **NOR (Norway)** — `volleyball.no` WordPress, but clubs are not a WP post type and not
-  inline on `/klubborganisasjon` (JS-injected from an external register — NIF/SportsAdmin or
-  Profixio). Hardest. Firecrawl-render to capture the live XHR, or check Profixio.
+### UKR + ALB — DataProject teams  (`extract-clubs-dataproject` x0JKgaz4Y2lOSLc9 | `/webhook/extract-clubs-dataproject`)
+**Reusable** across any federation whose results sit on `*.dataproject.com`. Team-search pages
+`https://<dpHost>.dataproject.com/CompetitionTeamSearch.aspx?ID=<comp>` render each club as a logo
+`<img title="CLUB NAME" ... src=".../TeamLogo_<TeamID>.jpg">` in **static** HTML (UTF-8 — no browser,
+no latin1). Parse `title`+`TeamID`, dedup `<FEDCODE>:<TeamID>`, iterate competition IDs (get them
+from the federation's "clubs"/league menu, which links to `CompetitionHome.aspx?ID=`). Name-only
+records (city/website/contacts via Resolve + site-scrape later). Baked-in PROFILES: **UKR**
+(`uvf-web`, comps 162-182 → 275 clubs), **ALB** (`fshv-web`, comps 108/114/115/116/117/122 → 25
+clubs). Override anything via body `{id,fedcode,dpHost,country,comps:[...]}`. **To add a new
+DataProject fed:** find its `*.dataproject.com` host + competition IDs, add a PROFILE (or pass via
+body), trigger.
+
+## Recon tool
+
+**Apify `puppeteer-scraper` actor `YJCnS9qogi9XxDgLB`** (approved). Use it to (a) capture live XHRs
+(`preNavigationHooks` → `page.on('response',…)` collecting JSON/api bodies) to find a hidden API,
+or (b) render nav/DOM to locate the real club page or results platform. Run via
+`POST api.apify.com/v2/acts/YJCnS9qogi9XxDgLB/run-sync-get-dataset-items?token=$APIFY_API_TOKEN`.
+This is how NOR's NIF API and UKR/ALB's DataProject hosts were discovered. **Pattern: render to
+discover the backend, then build a keyless deterministic extractor — don't scrape via the browser.**
+
+## Open leads (start here next session)
+
+_SVK (eliterro), SWE (Profixio partial), NOR (NIF), UKR + ALB (DataProject) are DONE — see
+above / STATUS.md._ Remaining CEV zero-club feds (all marginal, pursue only on request):
+
+- **CYP (Cyprus)** — `volleyball.org.cy/somatia` is **compromised** (SEO-spam defacement, no
+  club table, 0 mailtos). Need an alternative Cyprus federation domain/source. ~30 clubs.
+- **GIB (Gibraltar)** — no website/club directory (social only). Mark resolved-no-source.
+- **LAT (Latvia)** — `volejbols.lv/komandas` is ~15 league-group rosters (team + coach only,
+  no city/site/email). Thin; low value.
+- **MON (Monaco)** — ~1-2 clubs. Tiny.
+
+**Other DataProject feds:** many CEV/AVC federations run results on `*.dataproject.com`. To
+add one to the reusable extractor: find its host + competition IDs (from the fed's league
+menu → `CompetitionHome.aspx?ID=`), add a PROFILE or pass via body, trigger.
