@@ -73,7 +73,7 @@ export default function App() {
       <header className="border-b border-neutral-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center gap-4 px-6 py-3">
           <button onClick={() => navigate('dashboard')} aria-label="Home" className="flex items-center rounded-md p-0.5 hover:bg-neutral-100">
-            <VolleyballLogo className="h-7 w-7 text-neutral-900" />
+            <img src="/volleyball.png" alt="Volleyball" className="h-8 w-8" />
           </button>
           {/* desktop nav */}
           <MainNav view={view} navigate={navigate} className="hidden md:flex" />
@@ -161,18 +161,6 @@ function NavButton({ active, onClick, count, children }: { active: boolean; onCl
         </span>
       )}
     </button>
-  )
-}
-
-// Volleyball mark used as the app logo (home link). Inherits currentColor.
-function VolleyballLogo({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden>
-      <circle cx="12" cy="12" r="9.25" />
-      <path d="M12 2.75c-3 3.4-3.2 9.3-.6 14.1" />
-      <path d="M21 9.3c-4.4-1.3-10.3-.2-14.4 3" />
-      <path d="M15.4 21c-1.2-4.4-5-8.7-9.6-10.7" />
-    </svg>
   )
 }
 
