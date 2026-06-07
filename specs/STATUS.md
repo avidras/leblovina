@@ -30,11 +30,49 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > extractor** (`extract-clubs-nevobo` 42Ur1JEWgaQkDZ0a): **NED 0→1,739 clubs + ~1,600 contacts**
 > (email/phone) in ~100s, deterministic. DB now ~6.5k clubs / ~3.2k contacts.
 > **Still open:** SUI (Swiss Volley = SportManager portal `api.volleyball.ch` HTML + an
-> apiary-documented API needing a key — deferred); NOR (JS-tab actions); FRA (PHP search form);
-> CYP/MON (Apify); deeper federated crawl for *full* GER/ESP coverage; auto-route Nevobo/
-> site-scraper; fix club_count heuristic.
+> apiary-documented API needing a key — deferred); NOR (JS-tab actions); CYP/MON (Apify);
+> deeper federated crawl for *full* GER/ESP coverage; auto-route Nevobo/FFVB/site-scraper;
+> fix club_count heuristic.
+>
+> **Phase 3 round 3 (2026-06-07):** **FFVB open enumeration** — France's `ffvbbeach.org/ffvbapp/
+> adressier/recherche.php` POSTs one committee code (`ws_new_comit`, 105 départements) to
+> `rech_aff_club.php`, each result page listing every club with code + name + email + website.
+> Built `extract-clubs-ffvb` (`Vz1NsAbq4JWzwZr8` | `/webhook/extract-clubs-ffvb`): deterministic
+> regex parse (windowed per 7-digit club code; skips `*0000` committee entries; drops social
+> URLs), windows-1252→latin1 decode (accents clean), dedup `FRA:<code>`, upserts clubs +
+> contacts (`source_type:'directory'`). **FRA 0→1,310 clubs + 1,255 contacts** (687 w/ website)
+> in ~58s, deterministic. DB now ~8,476 clubs / 4,447 contacts.
+> _Note: Finalize copies the Nevobo pattern that PATCHes `scrape_note` onto the federation, but
+> that field only exists on `clubs` — PB silently drops it. Harmless (status + club_count persist);
+> clean up if a federation-level run note is ever wanted (write to `notes`)._
+> **Remaining of the user's 4 high-potential feds — investigation in progress (resume here):**
+> - **FRA — DONE** (1,310 clubs / 1,255 contacts; see above).
+> - **SWE (Sweden):** federation `volleyboll.se` runs on **Profixio** — the find-a-club page
+>   (`/forbundet/valkommen-till-volleyboll/hitta-forening`) points at
+>   `https://www.profixio.com/fx/terminliste.php?org=SVBF.SE.SVB` (org code **`SVBF.SE.SVB`**).
+>   Also has 5 district pages under `volleyboll.se/forbundet/distrikt/*`. **Next:** find Profixio's
+>   club-registry endpoint for that org (try the profixio app/API — `profixio.com/app/...`,
+>   tournament/club JSON) and enumerate. Profixio is a Nordic platform; cracking it likely also
+>   helps NOR/other Nordics.
+> - **SVK (Slovakia):** `slovakvolley.sk` is a Next.js SPA on the **eliterro** platform; API host
+>   is **`api.volley.eliterro.sk`** (confirmed via image URLs `?path=…`). `/api/club|clubs|kluby|
+>   team|teams|oddiel` all 404 — endpoint path still unknown. `slovakvolley.sk/page/adresare`
+>   renders competition lists, not a clean club address book (clubs likely under a competition or a
+>   different API route). **Next:** inspect the SPA's JS bundle / network calls (Firecrawl-render or
+>   fetch the Next.js `_next/data/*.json` for the adresare route) to find the real club endpoint on
+>   `api.volley.eliterro.sk`. Old dir `volleynet.sk/article/...` is a stale CMS article.
+> - **NOR (Norway):** `volleyball.no` is WordPress but clubs are **not** a WP post type
+>   (`/wp-json/wp/v2/types` has no club/klubb type) and **not** inline on `/klubborganisasjon`
+>   (no admin-ajax/nonce/iframe found in static HTML — JS-injected from an external register,
+>   likely NIF/SportsAdmin or Profixio). **Hardest of the three.** Next: Firecrawl-render
+>   `/klubborganisasjon` to capture the live XHR, or check if NOR volleyball is also on Profixio.
+>
+> **Pattern:** each is a per-platform enumeration like Nevobo (NED) and FFVB (FRA). When the
+> backend is an open/guessable API or POST-enumerable form → build a dedicated deterministic
+> extractor (fast, clean, captures emails). Only fall back to Firecrawl-render/Apify when there's
+> no reachable backend (NOR may be this case).
 
-_Last updated: 2026-06-06._
+_Last updated: 2026-06-07._
 
 ## Where things stand
 

@@ -1,0 +1,116 @@
+{
+  "name": "Leblovina — Extract clubs (FFVB adressier)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "extract-clubs-ffvb",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-600, 0],
+      "webhookId": "extract-clubs-ffvb"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "p", "name": "pbUrl", "value": "https://leblovina.tools.biceps.digital", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-440, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-280, 0],
+      "credentials": {
+        "httpCustomAuth": { "id": "hzdBwrAqrPZjDmME", "name": "PocketBase admin (api)" }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const COMITS={\"971\":\"Guadeloupe\",\"972\":\"Martinique\",\"973\":\"Guyane\",\"974\":\"La Réunion\",\"975\":\"St-Pierre et Miquelon\",\"976\":\"Mayotte\",\"978\":\"Les Iles du Nord\",\"980\":\"Nouvelle-Calédonie\",\"988\":\"Wallis et Futuna\",\"989\":\"Tahiti\",\"001\":\"Ain\",\"002\":\"Aisne\",\"003\":\"Allier\",\"004\":\"Alpes-de-Haute-Provence\",\"006\":\"Alpes-Maritimes\",\"007\":\"Ardèche\",\"008\":\"Ardennes\",\"009\":\"Ariège\",\"010\":\"Aube\",\"011\":\"Aude\",\"012\":\"Aveyron\",\"067\":\"Bas-Rhin\",\"013\":\"Bouches-du-Rhône\",\"014\":\"Calvados\",\"015\":\"Cantal\",\"016\":\"Charente\",\"017\":\"Charente-Maritime\",\"018\":\"Cher\",\"019\":\"Corrèze\",\"020\":\"Corse\",\"021\":\"Côte-d'Or\",\"022\":\"Côtes d'Armor\",\"023\":\"Creuse\",\"079\":\"Deux-Sèvres\",\"024\":\"Dordogne\",\"025\":\"Doubs\",\"026\":\"Drôme\",\"091\":\"Essonne\",\"027\":\"Eure\",\"028\":\"Eure-et-Loir\",\"029\":\"Finistère\",\"030\":\"Gard\",\"032\":\"Gers\",\"033\":\"Gironde\",\"068\":\"Haut-Rhin\",\"031\":\"Haute-Garonne\",\"043\":\"Haute-Loire\",\"052\":\"Haute-Marne\",\"070\":\"Haute-Saône\",\"074\":\"Haute-Savoie\",\"087\":\"Haute-Vienne\",\"005\":\"Hautes-Alpes\",\"065\":\"Hautes-Pyrénées\",\"092\":\"Hauts-de-Seine\",\"034\":\"Hérault\",\"035\":\"Ille-et-Vilaine\",\"036\":\"Indre\",\"037\":\"Indre-et-Loire\",\"038\":\"Isère\",\"039\":\"Jura\",\"040\":\"Landes\",\"041\":\"Loir-et-Cher\",\"042\":\"Loire\",\"044\":\"Loire-Atlantique\",\"045\":\"Loiret\",\"046\":\"Lot\",\"047\":\"Lot-et-Garonne\",\"048\":\"Lozère\",\"049\":\"Maine et Loire\",\"050\":\"Manche\",\"051\":\"Marne et Ardennes\",\"053\":\"Mayenne\",\"054\":\"Meurthe-et-Moselle\",\"055\":\"Meuse\",\"056\":\"Morbihan\",\"057\":\"Moselle\",\"058\":\"Nièvre\",\"059\":\"Nord\",\"060\":\"Oise\",\"061\":\"Orne\",\"075\":\"Paris\",\"062\":\"Pas de Calais\",\"063\":\"Puy-de-Dôme\",\"064\":\"Pyrénées-Atlantiques\",\"066\":\"Pyrénées-Orientales\",\"069\":\"Rhône Métropole de Lyon\",\"071\":\"Saône-et-Loire\",\"072\":\"Sarthe\",\"073\":\"Savoie\",\"093\":\"Seine St Denis\",\"077\":\"Seine-et-Marne\",\"076\":\"Seine-Maritime\",\"080\":\"Somme\",\"081\":\"Tarn\",\"082\":\"Tarn-et-Garonne\",\"090\":\"Territoire-de-Belfort\",\"095\":\"Val d'Oise\",\"094\":\"Val de Marne\",\"083\":\"Var\",\"084\":\"Vaucluse\",\"085\":\"Vendée\",\"086\":\"Vienne\",\"088\":\"Vosges\",\"089\":\"Yonne\",\"078\":\"Yvelines\"};\nconst fedId=(($('Webhook').first().json.body)||{}).id||'oehz3p08wxb97i7';\nreturn Object.keys(COMITS).map(comit=>({json:{comit,comitName:COMITS[comit],fedId}}));\n"
+      },
+      "id": "comits",
+      "name": "Committees",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-120, 0]
+    },
+    {
+      "parameters": { "batchSize": 1, "options": {} },
+      "id": "loop",
+      "name": "Loop",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [60, 0]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst fedId=$json.fedId; const comit=$json.comit; const region=$json.comitName||'';\nconst isEmail=(e)=>/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(e);\nconst isSocial=(u)=>/facebook|instagram|twitter|x\\.com|tiktok|youtube|linkedin/i.test(u);\nconst normUrl=(u)=>{u=String(u||'').trim();if(!u)return '';if(u.startsWith('//'))u='https:'+u;if(!/^https?:/i.test(u))u='https://'+u;return u;};\nconst now=new Date().toISOString();\nconst findClub=async(k)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:\"(dedup_key='\"+k+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nconst findContact=async(e)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs:{filter:\"(email='\"+e.replace(/'/g,'')+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nlet html='';\ntry{const resp=await this.helpers.httpRequest({method:'POST',url:'https://www.ffvbbeach.org/ffvbapp/adressier/rech_aff_club.php',body:'ws_new_ligue=0&ws_new_comit='+comit,headers:{'Content-Type':'application/x-www-form-urlencoded','User-Agent':'Mozilla/5.0'},encoding:'arraybuffer'});html=Buffer.from(resp).toString('latin1');}catch(e){return [{json:{comit,error:'fetch:'+e.message}}];}\nconst clubs=[]; const re=/(\\d{7})<\\/td>\\s*<td[^>]*><\\/td>\\s*<td><\\/td>\\s*<td class='lienquestion'>([^<]*)<\\/td>/g; let m;\nwhile((m=re.exec(html))!==null){const code=m[1]; if(code.endsWith('0000'))continue; const name=m[2].trim(); if(!name)continue; const win=html.slice(m.index,m.index+1400); const email=((win.match(/href='mailto:([^']+)'/i)||[])[1]||'').toLowerCase().trim(); let site=(win.match(/href='((?:https?:)?\\/\\/[^']+)'\\s+target='_blank'/i)||[])[1]||''; if(isSocial(site))site=''; clubs.push({code,name,email,site:normUrl(site)});}\nlet created=0,contactsC=0;\nfor(const c of clubs){const dedup='FRA:'+c.code; const base={federation:fedId,name:c.name,country:'France',region,dedup_key:dedup,source_url:'https://www.ffvbbeach.org/ffvbapp/adressier/recherche.php',source_club_id:c.code,last_scraped:now};\n  let clubId=null;\n  try{ try{const rec=await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/clubs/records',headers:pbH,body:Object.assign({},base,{website_url:c.site,website_source:c.site?'official_list':'none',status:'new'}),json:true});created++;clubId=rec.id;}\n    catch(e){const ex=await findClub(dedup); if(ex){const p=Object.assign({},base);if(c.site){p.website_url=c.site;p.website_source='official_list';}await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/clubs/records/'+ex.id,headers:pbH,body:p,json:true});clubId=ex.id;}else throw e;} }\n  catch(e){continue;}\n  if(c.email&&isEmail(c.email)){ try{await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/contacts/records',headers:pbH,body:{club:clubId,email:c.email,source_url:base.source_url,source_type:'directory',verification_status:'unverified'},json:true});contactsC++;}\n    catch(e){try{const ex=await findContact(c.email);if(ex&&!ex.club)await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/contacts/records/'+ex.id,headers:pbH,body:{club:clubId},json:true});}catch(_){}}\n  }\n}\nreturn [{json:{comit,region,clubs:clubs.length,created,contactsC}}];\n"
+      },
+      "id": "up",
+      "name": "Upsert committee",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 120],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst fedId=(($('Webhook').first().json.body)||{}).id||'oehz3p08wxb97i7';\nconst r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:'federation=\"'+fedId+'\"',perPage:1},headers:pbH,json:true});\nconst n=r.totalItems||0;\nawait this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/federations/records/'+fedId,headers:pbH,body:{status:(n>0?'scraped':'needs_review'),club_count:n,last_scraped:new Date().toISOString(),scrape_note:'ffvb adressier: '+n+' clubs'},json:true});\nreturn [{json:{ok:true,clubs:n}}];\n"
+      },
+      "id": "fin",
+      "name": "Finalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, -140]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "PB Auth", "type": "main", "index": 0 }]] },
+    "PB Auth": { "main": [[{ "node": "Committees", "type": "main", "index": 0 }]] },
+    "Committees": { "main": [[{ "node": "Loop", "type": "main", "index": 0 }]] },
+    "Loop": {
+      "main": [
+        [{ "node": "Finalize", "type": "main", "index": 0 }],
+        [{ "node": "Upsert committee", "type": "main", "index": 0 }]
+      ]
+    },
+    "Upsert committee": { "main": [[{ "node": "Loop", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false,
+  "pinData": {},
+  "meta": { "templateId": "leblovina-extract-ffvb" }
+}
