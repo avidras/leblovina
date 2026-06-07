@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogField } from '@/components/ui/dialog'
+import { CountryLabel } from '@/components/ui/country'
+import { withFlag } from '@/lib/countries'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
 type SortKey = 'club' | 'country' | 'email' | 'position'
@@ -105,7 +107,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
             {rows.map((c) => (
               <TR key={c.id}>
                 <TD className="cursor-pointer font-medium hover:text-blue-600" onClick={() => setOpenId(c.id)}>{clubName(c) || '—'}</TD>
-                <TD>{clubCountry(c) || '—'}</TD>
+                <TD><CountryLabel country={clubCountry(c)} /></TD>
                 <TD>
                   <a className="text-blue-600 hover:underline" href={`mailto:${c.email}`}>{c.email}</a>
                 </TD>
@@ -166,7 +168,7 @@ function ContactDetailDialog({ contact, onClose }: { contact: Contact | null; on
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">Club</h3>
             <dl className="grid grid-cols-2 gap-x-8 gap-y-3">
               <DialogField label="Club" value={club?.name} />
-              <DialogField label="Country" value={club?.country} />
+              <DialogField label="Country" value={withFlag(club?.country)} />
             </dl>
           </section>
 

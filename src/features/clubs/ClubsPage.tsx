@@ -11,6 +11,8 @@ import { Badge, statusTone } from '@/components/ui/badge'
 import { Tooltip } from '@/components/ui/tooltip'
 import { Dialog, DialogField } from '@/components/ui/dialog'
 import { useConfirm } from '@/components/ui/confirm'
+import { CountryLabel } from '@/components/ui/country'
+import { withFlag, countryFlag } from '@/lib/countries'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
 type SortKey = 'name' | 'country' | 'region' | 'city' | 'status'
@@ -110,7 +112,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
             onClick={() => { setCountry(''); clearUrlParam('country') }}
             title="Clear country filter"
           >
-            Country: <span className="font-medium">{country}</span>
+            Country: <span className="font-medium">{countryFlag(country) && `${countryFlag(country)} `}{country}</span>
             <span aria-hidden className="text-neutral-400">✕</span>
           </button>
         )}
@@ -184,7 +186,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
             {rows.map((c) => (
               <TR key={c.id}>
                 <TD className="cursor-pointer font-medium hover:text-blue-600" onClick={() => setOpenId(c.id)}>{c.name}</TD>
-                <TD>{c.country}</TD>
+                <TD><CountryLabel country={c.country} /></TD>
                 <TD>{c.region || '—'}</TD>
                 <TD>{c.city || '—'}</TD>
                 <TD className="max-w-[200px] truncate">
@@ -275,7 +277,7 @@ function ClubDetailDialog({
           <section>
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">Location</h3>
             <dl className="grid grid-cols-2 gap-x-8 gap-y-3">
-              <DialogField label="Country" value={club.country} />
+              <DialogField label="Country" value={withFlag(club.country)} />
               <DialogField label="Region" value={club.region} />
               <DialogField label="City" value={club.city} />
             </dl>

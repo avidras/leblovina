@@ -11,6 +11,8 @@ import { Badge, statusTone } from '@/components/ui/badge'
 import { Tooltip } from '@/components/ui/tooltip'
 import { Dialog, DialogField } from '@/components/ui/dialog'
 import { useConfirm } from '@/components/ui/confirm'
+import { CountryLabel } from '@/components/ui/country'
+import { withFlag } from '@/lib/countries'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
 type SortKey = 'fivb_code' | 'name' | 'country' | 'confederation' | 'status' | 'clubs' | 'last_scraped'
@@ -187,7 +189,7 @@ function FederationRow({
           <div className="font-medium">{fed.name}</div>
           <Badge tone="blue" className="mt-1">{fed.confederation || '—'}</Badge>
         </TD>
-        <TD>{fed.country}</TD>
+        <TD><CountryLabel country={fed.country} /></TD>
         <TD>{fed.status ? <Badge tone={statusTone(fed.status)}>{fed.status}</Badge> : '—'}</TD>
         <TD className="text-right tabular-nums">
           {clubCount > 0 ? (
@@ -275,7 +277,7 @@ function FederationDetailDialog({
           <section>
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">Overview</h3>
             <dl className="grid grid-cols-2 gap-x-8 gap-y-3">
-              <DialogField label="Country" value={fed.country} />
+              <DialogField label="Country" value={withFlag(fed.country)} />
               <DialogField label="Website" value={fed.website_url} link />
               <DialogField label="Extraction method" value={fed.extraction_method} />
               <DialogField label="Last scraped" value={fed.last_scraped} />
