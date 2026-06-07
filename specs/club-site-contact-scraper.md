@@ -80,6 +80,19 @@ site-scrape-club` (webhook): homepage fetch → discover candidate links → fet
 (Apify-escalate if needed) → Gemini extract+de-noise → upsert contacts → set club status.
 Reuses the Anthropic/Gemini + PB-admin + Apify creds.
 
+### Driver inputs / UI trigger
+`site-scrape-driver` webhook body:
+- `ids: string[]` — explicit club ids to scrape (used by the UI; scopes to exactly these).
+- `onlyNew: true` — when no `ids`, skip clubs already scraped (`contacts_found`/`no_contacts`).
+- `limit: N` — cap the number processed.
+
+When `ids` is present the driver scrapes exactly those (ignores the global `website_status='live'`
+query); otherwise it self-selects all live clubs. **UI:** the Clubs page **"Scrape sites for
+contacts"** action (in the batch actions menu) fetches the ids of live clubs in the *current
+filter* and POSTs them as `{ids}` (env `VITE_N8N_SITE_SCRAPE_URL`) — so the team can scope a run
+by confederation/country/etc., mirroring the resolve/harvest buttons. Heavier than resolve
+(multi-page + Apify/Gemini) and writes to `contacts`, so it's confirm-gated.
+
 ## Out of scope (later phases)
 Email **verification** (MX/SMTP), **A/B/C quality**, **Brevo** push, export shape. Form-only
 clubs (no email) deferred.

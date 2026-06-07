@@ -5,7 +5,7 @@ import { usePagedCollection } from '@/hooks/usePagedCollection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useUrlState, clearUrlParam } from '@/hooks/useUrlState'
 import { useContactCountsByClub } from '@/hooks/useContactCounts'
-import { triggerBatchEnrich, triggerEnglishizeClubs } from '@/lib/n8n'
+import { triggerBatchEnrich, triggerEnglishizeClubs, triggerSiteScrape } from '@/lib/n8n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -177,6 +177,35 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
     )
   }
 
+  // Phase 5: crawl live club sites in the current filter for contacts (multi-page; Apify/Gemini).
+  // Heavier than resolve and writes to the Contacts collection. Background.
+  async function scrapeSites() {
+    if (harvestCount === 0) return
+    const ok = await confirm({
+      title: 'Scrape club sites for contacts',
+      message: `Crawl ${harvestCount} live club site(s) in the current filter for contacts (multi-page; uses Apify/Gemini credits)? Runs in the background.`,
+      confirmLabel: 'Run',
+    })
+    if (!ok) return
+    setEnrichBusy(true)
+    setEnrichMsg(null)
+    let ids: string[]
+    try {
+      const list = await pb.collection('clubs').getFullList<{ id: string }>({
+        filter: harvestFilter || undefined, fields: 'id', batch: 500,
+      })
+      ids = list.map((c) => c.id)
+    } catch (e) {
+      setEnrichBusy(false)
+      setEnrichMsg(`Failed: ${(e as Error).message}`)
+      return
+    }
+    if (ids.length === 0) { setEnrichBusy(false); return }
+    const r = await triggerSiteScrape(ids)
+    setEnrichBusy(false)
+    setEnrichMsg(r.ok ? `Scraping ${ids.length} site(s) — contacts land live.` : `Failed: ${r.error || r.status}`)
+  }
+
   if (error) return <div className="p-6 text-sm text-red-600">Failed to load clubs: {error}</div>
 
   return (
@@ -251,6 +280,14 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
               description: 'Harvest emails/contact/socials/language from every live site, any source. No Serper spend. Background.',
               disabled: enrichBusy || harvestCount === 0,
               onSelect: () => resolveWebsites('harvest'),
+            },
+            {
+              key: 'scrape',
+              label: 'Scrape sites for contacts',
+              count: harvestCount,
+              description: 'Crawl live club sites in the filter for contacts (multi-page; Apify/Gemini). Writes to Contacts. Background.',
+              disabled: enrichBusy || harvestCount === 0,
+              onSelect: scrapeSites,
             },
             {
               key: 'romanize',

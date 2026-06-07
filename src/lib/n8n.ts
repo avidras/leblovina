@@ -6,6 +6,7 @@ const BATCH_PROCESS_URL = import.meta.env.VITE_N8N_BATCH_PROCESS_URL as string |
 const EXTRACT_CLUBS_URL = import.meta.env.VITE_N8N_EXTRACT_CLUBS_URL as string | undefined
 const BATCH_ENRICH_URL = import.meta.env.VITE_N8N_BATCH_ENRICH_URL as string | undefined
 const ENGLISHIZE_CLUBS_URL = import.meta.env.VITE_N8N_ENGLISHIZE_CLUBS_URL as string | undefined
+const SITE_SCRAPE_URL = import.meta.env.VITE_N8N_SITE_SCRAPE_URL as string | undefined
 
 export interface TriggerResult {
   ok: boolean
@@ -89,4 +90,15 @@ export async function triggerEnglishizeClubs(ids?: string[]): Promise<TriggerRes
     return { ok: false, status: 0, error: 'VITE_N8N_ENGLISHIZE_CLUBS_URL is not set' }
   }
   return postWebhook(ENGLISHIZE_CLUBS_URL, ids && ids.length ? { ids } : {})
+}
+
+// Phase 5: crawl club websites for contacts (multi-page; Apify/Gemini) and write to
+// `contacts` (source_type='club_site'). Pass `ids` to scope to the current Clubs filter;
+// omit to run over all live clubs (skipping already-scraped). Async/background.
+// See specs/club-site-contact-scraper.md.
+export async function triggerSiteScrape(ids?: string[]): Promise<TriggerResult> {
+  if (!SITE_SCRAPE_URL) {
+    return { ok: false, status: 0, error: 'VITE_N8N_SITE_SCRAPE_URL is not set' }
+  }
+  return postWebhook(SITE_SCRAPE_URL, ids && ids.length ? { ids } : { onlyNew: true })
 }
