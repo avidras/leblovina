@@ -127,7 +127,18 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > national + other 4 districts route to Profixio). **Full SWE (hundreds of clubs) remains
 > browser-only via Profixio with NO emails — low lead-gen value, deferred.** svenskalag.se "sok"
 > is a text search (9 hits), not a sport directory.
-> **Zero set now 8:** ALB, CYP, GIB, LAT, MON, NOR, SUI, UKR. (SVK done; SWE off-zero, partial.)
+> **SUI done (partial) — 0→27 clubs + 16 contacts (clean emails).** Apify puppeteer-scraper
+> (now approved) was used **only to discover** that volleyball.ch's club search does NOT call
+> Algolia directly — it POSTs to a **same-origin Searchkit proxy** `https://www.volleyball.ch/
+> api/searchkit/club-search` with an Algolia-style body `[{indexName:'clubs-0',params:{query,
+> hitsPerPage,page}}]` and **needs no API key**. So the Algolia appId/searchKey hunt was moot.
+> Built `extract-clubs-sui` (`zGJj5ZTSGfK0iAJ4` | `/webhook/extract-clubs-sui`): POST empty
+> query hitsPerPage 1000 → hits carry `caption`(name)/`city`/`zip`/`website`/`email` → upsert
+> club (`dedup_key='SUI:'+objectID`) + contact. Keyless, browserless, deterministic, ~5s.
+> **The `clubs-0` index has only 27 opt-in club cards (match_all nbHits=27) — the recon's
+> 'hundreds' was wrong.** The full Swiss roster is behind the authenticated `api.volleyball.ch/
+> indoor/clubs` ('Valid API-Key required') — deferred.
+> **Zero set now 7:** ALB, CYP, GIB, LAT, MON, NOR, UKR. (SVK done; SWE + SUI off-zero, partial.)
 > **SUI blocker confirmed dead-end statically:** Algolia appId+searchKey are runtime-injected —
 > NOT in HTML, NOT in any `/_next/static/chunks/*.js` (only the Sentry DSN `…@sentry.visol.ch` and
 > `indexName:"clubs-0"` are literals; `searchClient` is an imported var, `[appId,apiKey]` read from
@@ -165,6 +176,7 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
   - Enrich/Resolve website `jOeufPcBBIWrij7M` | `/webhook/enrich-club`
   - Extract clubs (eliterro/SVK) `pq5ObaOqWYMvkJuk` | `/webhook/extract-clubs-eliterro`
   - Extract clubs (SVBF map/SWE) `Isoaq7s7VfszJcrM` | `/webhook/extract-clubs-svbf-map`
+  - Extract clubs (searchkit/SUI) `zGJj5ZTSGfK0iAJ4` | `/webhook/extract-clubs-sui`
   - Extract clubs (FFVB/FRA) `Vz1NsAbq4JWzwZr8` | `/webhook/extract-clubs-ffvb`
   - Extract clubs (Nevobo/NED) `42Ur1JEWgaQkDZ0a` | `/webhook/extract-clubs-nevobo`
 - Trigger an extractor: `POST {webhook} {"id":"<fedId>"}` (optionally `"url":"<dir>"` to force one dir).
