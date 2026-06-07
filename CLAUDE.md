@@ -265,6 +265,20 @@ updating a Code node, then triggering the webhook to confirm). The `.env` is git
   `ANTHROPIC_API_KEY`) are there for reproducing/debugging an n8n node's call locally. The app
   itself still needs none of them — at runtime those secrets live in n8n (see Conventions).
 
+## CLI control (Claude Code skills)
+
+Operational control of the pipeline lives in `.claude/skills/leblovina-*` — invoke these to
+drive the app from the CLI (they read `.env`, hit the PB + n8n APIs, and follow the patterns
+above):
+- `leblovina-ops` — hub: creds/endpoints/primitives + live status queries. **Read first.**
+- `leblovina-extract-clubs` — discover/extract clubs for a federation or batch; verify counts.
+- `leblovina-fix-zero-clubs` — find a confederation's zero-club federations and tweak/build the
+  extractor until clubs land at the real roster size.
+- `leblovina-resolve-websites` — resolve + enrich (A/B/C, harvest) + aggregator cleanup.
+- `leblovina-scrape-contacts` — crawl club sites + federation detail pages into `contacts`.
+
+Keep these in sync when the workflow set or operational patterns change.
+
 ## Dev setup
 
 **Local dev runs PocketBase as a bare binary — no Docker.** PocketBase is a single binary;
