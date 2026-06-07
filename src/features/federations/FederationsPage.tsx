@@ -19,6 +19,7 @@ import { CountryLabel } from '@/components/ui/country'
 import { Pagination } from '@/components/ui/pagination'
 import { withFlag } from '@/lib/countries'
 import { downloadCsv } from '@/lib/csv'
+import { relTime, exactTime } from '@/lib/time'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
 // `clubs` is no longer sortable server-side (it's an aggregate, not a column);
@@ -191,6 +192,7 @@ export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string
             <TH sortable sorted={sortedOf('status')} onClick={() => toggleSort('status')}>Status</TH>
             <TH className="text-right">Clubs</TH>
             <TH sortable sorted={sortedOf('website_url')} onClick={() => toggleSort('website_url')}>Website</TH>
+            <TH sortable sorted={sortedOf('last_scraped')} onClick={() => toggleSort('last_scraped')}>Last scrape</TH>
             <TH className="text-right">Actions</TH>
           </TR>
         </THead>
@@ -263,6 +265,9 @@ function FederationRow({
               {fed.website_url.replace(/^https?:\/\//, '')}
             </a>
           ) : <span className="text-neutral-400">none</span>}
+        </TD>
+        <TD className="whitespace-nowrap text-xs text-neutral-500" title={exactTime(fed.last_scraped)}>
+          {relTime(fed.last_scraped)}
         </TD>
         <TD className="text-right whitespace-nowrap">
           <span className="inline-flex items-center justify-end gap-1">
