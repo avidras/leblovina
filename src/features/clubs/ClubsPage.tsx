@@ -211,6 +211,22 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
     setEnrichMsg(r.ok ? `Scraping ${ids.length} site(s) — contacts land live.` : `Failed: ${r.error || r.status}`)
   }
 
+  // Per-club full scrape (from the club detail dialog). force=true so it runs even for a
+  // low-confidence site the user explicitly picked. Uses website + federation detail page.
+  async function scrapeOne(clubId: string) {
+    const ok = await confirm({
+      title: 'Scrape this club',
+      message: 'Crawl this club’s website and/or federation detail page for contacts (uses Apify/Gemini credits)? Runs in the background.',
+      confirmLabel: 'Run',
+    })
+    if (!ok) return
+    setEnrichBusy(true)
+    setEnrichMsg(null)
+    const r = await triggerSiteScrape([clubId], true)
+    setEnrichBusy(false)
+    setEnrichMsg(r.ok ? 'Scraping 1 club — contacts land live.' : `Failed: ${r.error || r.status}`)
+  }
+
   if (error) return <div className="p-6 text-sm text-red-600">Failed to load clubs: {error}</div>
 
   return (
@@ -396,6 +412,8 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
       <ClubDetailDialog
         club={items.find((c) => c.id === openId) ?? null}
         contactCount={openId ? contactCounts[openId] || 0 : 0}
+        busy={enrichBusy}
+        onScrape={scrapeOne}
         onClose={() => setOpenId(null)}
         onOpenContacts={onOpenContacts}
       />
@@ -405,10 +423,12 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
 }
 
 function ClubDetailDialog({
-  club, contactCount, onClose, onOpenContacts,
+  club, contactCount, busy, onScrape, onClose, onOpenContacts,
 }: {
   club: Club | null
   contactCount: number
+  busy?: boolean
+  onScrape?: (clubId: string) => void
   onClose: () => void
   onOpenContacts?: (clubId: string) => void
 }) {
@@ -435,11 +455,18 @@ function ClubDetailDialog({
         )
       }
       footer={
-        club && contactCount > 0 && onOpenContacts && (
-          <div className="flex justify-end">
-            <Button size="sm" variant="outline" onClick={() => { onOpenContacts(club.id); onClose() }}>
-              View {contactCount} contact{contactCount === 1 ? '' : 's'}
-            </Button>
+        club && (
+          <div className="flex justify-end gap-2">
+            {onScrape && (club.website_url || club.detail_url) && (
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => onScrape(club.id)}>
+                {busy ? 'Scraping…' : 'Full scrape'}
+              </Button>
+            )}
+            {contactCount > 0 && onOpenContacts && (
+              <Button size="sm" variant="outline" onClick={() => { onOpenContacts(club.id); onClose() }}>
+                View {contactCount} contact{contactCount === 1 ? '' : 's'}
+              </Button>
+            )}
           </div>
         )
       }

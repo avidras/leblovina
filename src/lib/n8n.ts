@@ -96,9 +96,11 @@ export async function triggerEnglishizeClubs(ids?: string[]): Promise<TriggerRes
 // `contacts` (source_type='club_site'). Pass `ids` to scope to the current Clubs filter;
 // omit to run over all live clubs (skipping already-scraped). Async/background.
 // See specs/club-site-contact-scraper.md.
-export async function triggerSiteScrape(ids?: string[]): Promise<TriggerResult> {
+export async function triggerSiteScrape(ids?: string[], force = false): Promise<TriggerResult> {
   if (!SITE_SCRAPE_URL) {
     return { ok: false, status: 0, error: 'VITE_N8N_SITE_SCRAPE_URL is not set' }
   }
-  return postWebhook(SITE_SCRAPE_URL, ids && ids.length ? { ids } : { onlyNew: true })
+  // force=true scrapes even low-confidence (C) sites — used by the per-club action where the
+  // user explicitly picked one club. Batch runs leave force off (C gated out).
+  return postWebhook(SITE_SCRAPE_URL, ids && ids.length ? { ids, force } : { onlyNew: true })
 }
