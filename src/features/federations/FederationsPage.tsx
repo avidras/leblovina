@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { pb, CONFEDERATIONS, FEDERATION_STATUSES, type Federation } from '@/lib/pb'
 import { usePagedCollection } from '@/hooks/usePagedCollection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { useUrlState } from '@/hooks/useUrlState'
+import { useUrlState, usePersistentState } from '@/hooks/useUrlState'
 import { useClubCountsByFederation } from '@/hooks/useClubCounts'
 import { statusLabel, extractionMethodLabel } from '@/lib/labels'
 import { triggerDiscoverClubs, triggerBatchProcess, triggerExtractFederation, type TriggerResult } from '@/lib/n8n'
@@ -41,7 +41,7 @@ export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string
   const [conf, setConf] = useUrlState('conf')
   const [status, setStatus] = useUrlState('status')
   const [q, setQ] = useUrlState('q')
-  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'status', dir: 'asc' })
+  const [sort, setSort] = usePersistentState<{ key: SortKey; dir: 'asc' | 'desc' }>('feds:sort', { key: 'status', dir: 'asc' })
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(100)
   const [openId, setOpenId] = useState<string | null>(null)

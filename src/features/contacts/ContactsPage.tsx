@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { pb, type Contact, type Club, VERIFICATION_STATUSES, CONTACT_SOURCE_TYPES } from '@/lib/pb'
 import { usePagedCollection } from '@/hooks/usePagedCollection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { useUrlState, clearUrlParam } from '@/hooks/useUrlState'
+import { useUrlState, usePersistentState, clearUrlParam } from '@/hooks/useUrlState'
 import { useCountries } from '@/hooks/useCountries'
 import { verificationLabel, sourceTypeLabel } from '@/lib/labels'
 import { Input } from '@/components/ui/input'
@@ -50,7 +50,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
   const [countryF, setCountryF] = useUrlState('country')
   const [vsFilter, setVsFilter] = useUrlState('vs')
   const [srcFilter, setSrcFilter] = useUrlState('src')
-  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'club', dir: 'asc' })
+  const [sort, setSort] = usePersistentState<{ key: SortKey; dir: 'asc' | 'desc' }>('contacts:sort', { key: 'club', dir: 'asc' })
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(100)
   const [openId, setOpenId] = useState<string | null>(null)
@@ -168,7 +168,6 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
               <TH sortable sorted={sortedOf('club')} onClick={() => toggleSort('club')} className="min-w-[220px]">Club</TH>
               <TH sortable sorted={sortedOf('country')} onClick={() => toggleSort('country')}>Country</TH>
               <TH sortable sorted={sortedOf('email')} onClick={() => toggleSort('email')}>Email</TH>
-              <TH sortable sorted={sortedOf('position')} onClick={() => toggleSort('position')}>Position</TH>
               <TH>Phone</TH>
               <TH>From</TH>
               <TH>Source</TH>
@@ -193,8 +192,10 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
                 </TD>
                 <TD>
                   <a className="text-blue-600 hover:underline" href={`mailto:${c.email}`} onClick={(e) => e.stopPropagation()}>{c.email}</a>
+                  {(c.name || c.position) && (
+                    <div className="text-xs text-neutral-500">{[c.name, c.position].filter(Boolean).join(' · ')}</div>
+                  )}
                 </TD>
-                <TD>{c.position || '—'}</TD>
                 <TD>{c.phone || '—'}</TD>
                 <TD>
                   <Badge tone={c.source_type === 'club_site' ? 'green' : c.source_type === 'manual' ? 'neutral' : 'blue'}>

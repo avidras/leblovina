@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { pb, type Club, type ScrapePage, type WebsiteConfidence, type ClubType, WEBSITE_STATUSES, WEBSITE_CONFIDENCES, CLUB_TYPES } from '@/lib/pb'
+import { pb, type Club, type Contact, type ScrapePage, type WebsiteConfidence, type ClubType, WEBSITE_STATUSES, WEBSITE_CONFIDENCES, CLUB_TYPES } from '@/lib/pb'
 import { statusLabel, websiteStatusLabel, websiteSourceLabel, confidenceLabel, confidenceHelp, clubTypeLabel } from '@/lib/labels'
 import { usePagedCollection } from '@/hooks/usePagedCollection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { useUrlState, clearUrlParam } from '@/hooks/useUrlState'
+import { useUrlState, usePersistentState, clearUrlParam } from '@/hooks/useUrlState'
 import { useContactCountsByClub } from '@/hooks/useContactCounts'
 import { triggerBatchEnrich, triggerEnglishizeClubs, triggerScrapeEnqueue } from '@/lib/n8n'
 import { relTime, exactTime } from '@/lib/time'
@@ -68,12 +68,12 @@ function clubTypeTone(t: ClubType | ''): 'blue' | 'amber' | 'neutral' {
 
 export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?: string | null; onOpenContacts?: (clubId: string) => void } = {}) {
   const [q, setQ] = useUrlState('q')
-  const [country, setCountry] = useState(initialCountry ?? '')
+  const [country, setCountry] = useUrlState('country', initialCountry ?? '')
   const [hasSite, setHasSite] = useUrlState('hasSite')
   const [wsFilter, setWsFilter] = useUrlState('ws')
   const [wcFilter, setWcFilter] = useUrlState('wc')
   const [ctFilter, setCtFilter] = useUrlState('ct')
-  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'name', dir: 'asc' })
+  const [sort, setSort] = usePersistentState<{ key: SortKey; dir: 'asc' | 'desc' }>('clubs:sort', { key: 'name', dir: 'asc' })
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(100)
   const [enrichBusy, setEnrichBusy] = useState(false)
@@ -471,11 +471,18 @@ export function ClubDetailDialog({
   onOpenContacts?: (clubId: string) => void
 }) {
   const [pages, setPages] = useState<ScrapePage[]>([])
+  const [contacts, setContacts] = useState<Contact[]>([])
   const [fileToken, setFileToken] = useState('')
   useEffect(() => {
-    if (!club) { setPages([]); return }
+    if (!club) { setPages([]); setContacts([]); return }
     let alive = true
     ;(async () => {
+      try {
+        const cts = await pb.collection('contacts').getFullList<Contact>({
+          filter: pb.filter('club = {:c}', { c: club.id }), sort: 'source_type,email',
+        })
+        if (alive) setContacts(cts)
+      } catch { if (alive) setContacts([]) }
       try {
         const list = await pb.collection('scrape_pages').getFullList<ScrapePage>({
           filter: pb.filter('club = {:c}', { c: club.id }),
@@ -573,6 +580,27 @@ export function ClubDetailDialog({
               </div>
             )}
           </section>
+
+          {contacts.length > 0 && (
+            <section>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                Contacts ({contacts.length})
+              </h3>
+              <div className="space-y-1.5">
+                {contacts.map((ct) => (
+                  <div key={ct.id} className="flex flex-wrap items-center gap-2 text-sm">
+                    <a className="font-medium text-blue-600 hover:underline" href={`mailto:${ct.email}`}>{ct.email}</a>
+                    {ct.name && <span className="text-neutral-700">{ct.name}</span>}
+                    {ct.position && <span className="text-xs text-neutral-500">({ct.position})</span>}
+                    {ct.phone && <span className="text-xs text-neutral-500">· {ct.phone}</span>}
+                    <Badge tone={ct.source_type === 'club_site' ? 'green' : ct.source_type === 'manual' ? 'neutral' : 'blue'}>
+                      {ct.source_type || 'directory'}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {pages.length > 0 && (
             <section>
