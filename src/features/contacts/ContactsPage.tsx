@@ -5,6 +5,7 @@ import { useUrlState, clearUrlParam } from '@/hooks/useUrlState'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { Dialog, DialogField } from '@/components/ui/dialog'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
 type SortKey = 'club' | 'country' | 'email' | 'position'
@@ -16,6 +17,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
   const [vsFilter, setVsFilter] = useUrlState('vs')
   const [srcFilter, setSrcFilter] = useUrlState('src')
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'club', dir: 'asc' })
+  const [openId, setOpenId] = useState<string | null>(null)
 
   const clubName = (c: Contact) => c.expand?.club?.name ?? ''
   const clubCountry = (c: Contact) => c.expand?.club?.country ?? ''
@@ -102,7 +104,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
           <TBody>
             {rows.map((c) => (
               <TR key={c.id}>
-                <TD className="font-medium">{clubName(c) || '—'}</TD>
+                <TD className="cursor-pointer font-medium hover:text-blue-600" onClick={() => setOpenId(c.id)}>{clubName(c) || '—'}</TD>
                 <TD>{clubCountry(c) || '—'}</TD>
                 <TD>
                   <a className="text-blue-600 hover:underline" href={`mailto:${c.email}`}>{c.email}</a>
@@ -131,6 +133,70 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
           </TBody>
         </Table>
       )}
+
+      <ContactDetailDialog
+        contact={items.find((c) => c.id === openId) ?? null}
+        onClose={() => setOpenId(null)}
+      />
     </div>
+  )
+}
+
+function ContactDetailDialog({ contact, onClose }: { contact: Contact | null; onClose: () => void }) {
+  const club = contact?.expand?.club
+  return (
+    <Dialog
+      open={contact != null}
+      onClose={onClose}
+      header={
+        contact && (
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base font-semibold text-neutral-900">{contact.email}</h2>
+            <Badge tone={contact.verification_status === 'verified' ? 'green' : 'neutral'}>
+              {contact.verification_status || 'unverified'}
+            </Badge>
+            {contact.quality && <Badge tone="blue">quality {contact.quality}</Badge>}
+          </div>
+        )
+      }
+    >
+      {contact && (
+        <div className="space-y-5">
+          <section>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">Club</h3>
+            <dl className="grid grid-cols-2 gap-x-8 gap-y-3">
+              <DialogField label="Club" value={club?.name} />
+              <DialogField label="Country" value={club?.country} />
+            </dl>
+          </section>
+
+          <section>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">Contact</h3>
+            <dl className="grid grid-cols-2 gap-x-8 gap-y-3">
+              <DialogField label="Email" value={contact.email} />
+              <DialogField label="Name" value={contact.name} />
+              <DialogField label="Position" value={contact.position} />
+              <DialogField label="Phone" value={contact.phone} />
+            </dl>
+          </section>
+
+          <section>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">Provenance</h3>
+            <dl className="grid grid-cols-2 gap-x-8 gap-y-3">
+              <DialogField label="Source type" value={contact.source_type} />
+              <DialogField label="Source URL" value={contact.source_url} link />
+              <DialogField label="Verification" value={contact.verification_status} />
+              <DialogField label="Verified at" value={contact.verified_at} />
+            </dl>
+            {contact.notes && (
+              <div className="mt-3">
+                <dt className="text-xs font-medium uppercase tracking-wide text-neutral-400">Notes</dt>
+                <dd className="mt-1 whitespace-pre-wrap text-sm text-neutral-900">{contact.notes}</dd>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+    </Dialog>
   )
 }
