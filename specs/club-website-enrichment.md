@@ -85,6 +85,36 @@ fetches; log how many tried — no silent truncation) and:
 Because the LLM pick is first, a good pick still wins immediately; the fallback only engages
 when the pick is a hard miss.
 
+**Precision hardening (added after the first CEV run surfaced false positives):** the fallback
+walked raw Serper results and accepted any live page with a volleyball signal — which let
+*volleyball-ecosystem* pages through (confederation, federation, results platforms, news). Three
+guards now apply:
+- **Ecosystem blocklist** — `cev.eu`, `dataproject.com`, `worldofvolley.com`,
+  `volleyballworld.com`, `fivb.` added to the existing social/stats blocklist.
+- **Federation's own domain excluded** — `Get Club` fetches `?expand=federation`; Resolve blocks
+  any candidate whose host equals or is a subdomain of the federation's `website_url` host (e.g.
+  `*.hos-cvf.hr`). A federation page is never a club's own site.
+- **Fallback must tie to *this* club** — a non-pick candidate is accepted only if a club
+  name-token appears in its title/`og`/`h1` **or** its domain (`headHit || domHit`); "is about
+  volleyball" alone is not enough. Ecosystem/namesake pages with no link to the specific club
+  fall through to `not_found` (cleared) rather than being stored as a wrong URL. The LLM pick is
+  exempt (keeps its original ambiguous→C behavior).
+
+## Aggregator cleanup (cross-club domain frequency)
+
+Some aggregator/portal/regional-association domains (e.g. `sportmap.cz`, `londonvolleyball.org.uk`)
+pass every per-club check — the club name *is* on their page — so they resolve, often to
+**confidence A**, for many different clubs. A single per-club workflow can't see that a host is
+reused across clubs, so this is cleaned in a **cross-club post-run pass**:
+
+- Tally the resolved host across all serper-sourced live clubs; any host used by **≥ N (default 3)
+  distinct clubs** is treated as an aggregator/portal, not a club's own site.
+- **Clear** those clubs (`website_url=''`, `website_status='not_found'`, source/confidence/club_type
+  and harvested signals reset). Reversible — they can be re-resolved later.
+- **Scoped to `website_source='serper'`** — never touches `official_list`/`manual` provenance.
+- Every flagged host is logged before clearing (auditable). Run as an operational batch after a
+  large resolve; not part of the per-club workflow.
+
 ## D — Requery without "volleyball"
 
 `Validate` emits a second query `query2 = name + city + country` (no sport term). A second
