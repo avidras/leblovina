@@ -276,6 +276,8 @@ above):
   extractor until clubs land at the real roster size.
 - `leblovina-resolve-websites` — resolve + enrich (A/B/C, harvest) + aggregator cleanup.
 - `leblovina-scrape-contacts` — crawl club sites + federation detail pages into `contacts`.
+- `leblovina-remine-directories` — backfill emails/website/detail_url the extractors dropped, by
+  re-mining the directory pages uniformly (also auto-runs at extraction time).
 
 Keep these in sync when the workflow set or operational patterns change.
 
