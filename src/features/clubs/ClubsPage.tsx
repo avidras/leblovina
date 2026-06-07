@@ -15,6 +15,7 @@ import { Select } from '@/components/ui/select'
 import { Badge, statusTone } from '@/components/ui/badge'
 import { Tooltip } from '@/components/ui/tooltip'
 import { ActionsMenu } from '@/components/ui/menu'
+import { FilterPanel } from '@/components/ui/filter-panel'
 import { Dialog, DialogField } from '@/components/ui/dialog'
 import { useConfirm } from '@/components/ui/confirm'
 import { CountryLabel } from '@/components/ui/country'
@@ -261,33 +262,35 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
             <span aria-hidden className="text-neutral-400">✕</span>
           </button>
         )}
-        <Select value={country} onChange={(e) => { setCountry(e.target.value); if (!e.target.value) clearUrlParam('country'); resetPage() }} title="Filter by country">
-          <option value="">Any country</option>
-          {countries.map((c) => (<option key={c} value={c}>{c}</option>))}
-        </Select>
-        <Select value={hasSite} onChange={(e) => { setHasSite(e.target.value); resetPage() }}>
-          <option value="">Any website</option>
-          <option value="yes">Has website</option>
-          <option value="no">No website</option>
-        </Select>
-        <Select value={wsFilter} onChange={(e) => { setWsFilter(e.target.value); resetPage() }}>
-          <option value="">Any web status</option>
-          {WEBSITE_STATUSES.map((s) => (
-            <option key={s} value={s}>{websiteStatusLabel(s)}</option>
-          ))}
-        </Select>
-        <Select value={wcFilter} onChange={(e) => { setWcFilter(e.target.value); resetPage() }} title="Filter by website confidence (C = needs review)">
-          <option value="">Any confidence</option>
-          {WEBSITE_CONFIDENCES.map((c) => (
-            <option key={c} value={c}>{c === 'unknown' ? 'Unchecked' : `Conf. ${c}`}</option>
-          ))}
-        </Select>
-        <Select value={ctFilter} onChange={(e) => { setCtFilter(e.target.value); resetPage() }} title="Filter by club type (volleyball vs multi-sport club)">
-          <option value="">Any type</option>
-          {CLUB_TYPES.map((t) => (
-            <option key={t} value={t}>{clubTypeLabel(t)}</option>
-          ))}
-        </Select>
+        <FilterPanel activeCount={[country, hasSite, wsFilter, wcFilter, ctFilter].filter(Boolean).length}>
+          <Select className="w-full" value={country} onChange={(e) => { setCountry(e.target.value); if (!e.target.value) clearUrlParam('country'); resetPage() }} title="Filter by country">
+            <option value="">Any country</option>
+            {countries.map((c) => (<option key={c} value={c}>{c}</option>))}
+          </Select>
+          <Select className="w-full" value={hasSite} onChange={(e) => { setHasSite(e.target.value); resetPage() }}>
+            <option value="">Any website</option>
+            <option value="yes">Has website</option>
+            <option value="no">No website</option>
+          </Select>
+          <Select className="w-full" value={wsFilter} onChange={(e) => { setWsFilter(e.target.value); resetPage() }}>
+            <option value="">Any web status</option>
+            {WEBSITE_STATUSES.map((s) => (
+              <option key={s} value={s}>{websiteStatusLabel(s)}</option>
+            ))}
+          </Select>
+          <Select className="w-full" value={wcFilter} onChange={(e) => { setWcFilter(e.target.value); resetPage() }} title="Filter by website confidence (C = needs review)">
+            <option value="">Any confidence</option>
+            {WEBSITE_CONFIDENCES.map((c) => (
+              <option key={c} value={c}>{c === 'unknown' ? 'Unchecked' : `Conf. ${c}`}</option>
+            ))}
+          </Select>
+          <Select className="w-full" value={ctFilter} onChange={(e) => { setCtFilter(e.target.value); resetPage() }} title="Filter by club type (volleyball vs multi-sport club)">
+            <option value="">Any type</option>
+            {CLUB_TYPES.map((t) => (
+              <option key={t} value={t}>{clubTypeLabel(t)}</option>
+            ))}
+          </Select>
+        </FilterPanel>
         <span className="ml-auto text-sm text-neutral-500">{totalItems.toLocaleString()} clubs{loading ? ' · loading…' : ''}</span>
         <ActionsMenu
           busy={enrichBusy}

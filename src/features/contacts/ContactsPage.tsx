@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogField } from '@/components/ui/dialog'
 import { CountryLabel } from '@/components/ui/country'
 import { ActionsMenu } from '@/components/ui/menu'
+import { FilterPanel } from '@/components/ui/filter-panel'
 import { Pagination } from '@/components/ui/pagination'
 import { withFlag } from '@/lib/countries'
 import { downloadCsv } from '@/lib/csv'
@@ -123,22 +124,24 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
             <span aria-hidden className="text-neutral-400">✕</span>
           </button>
         )}
-        <Select value={srcFilter} onChange={(e) => { setSrcFilter(e.target.value); resetPage() }}>
-          <option value="">Any source</option>
-          {CONTACT_SOURCE_TYPES.map((s) => (
-            <option key={s} value={s}>{sourceTypeLabel(s)}</option>
-          ))}
-        </Select>
-        <Select value={vsFilter} onChange={(e) => { setVsFilter(e.target.value); resetPage() }}>
-          <option value="">Any verification</option>
-          {VERIFICATION_STATUSES.map((s) => (
-            <option key={s} value={s}>{verificationLabel(s)}</option>
-          ))}
-        </Select>
-        <Select value={countryF} onChange={(e) => { setCountryF(e.target.value); resetPage() }} title="Filter by country">
-          <option value="">Any country</option>
-          {countries.map((c) => (<option key={c} value={c}>{c}</option>))}
-        </Select>
+        <FilterPanel activeCount={[srcFilter, vsFilter, countryF].filter(Boolean).length}>
+          <Select className="w-full" value={countryF} onChange={(e) => { setCountryF(e.target.value); resetPage() }} title="Filter by country">
+            <option value="">Any country</option>
+            {countries.map((c) => (<option key={c} value={c}>{c}</option>))}
+          </Select>
+          <Select className="w-full" value={srcFilter} onChange={(e) => { setSrcFilter(e.target.value); resetPage() }}>
+            <option value="">Any source</option>
+            {CONTACT_SOURCE_TYPES.map((s) => (
+              <option key={s} value={s}>{sourceTypeLabel(s)}</option>
+            ))}
+          </Select>
+          <Select className="w-full" value={vsFilter} onChange={(e) => { setVsFilter(e.target.value); resetPage() }}>
+            <option value="">Any verification</option>
+            {VERIFICATION_STATUSES.map((s) => (
+              <option key={s} value={s}>{verificationLabel(s)}</option>
+            ))}
+          </Select>
+        </FilterPanel>
         <span className="ml-auto text-sm text-neutral-500">{totalItems.toLocaleString()} contacts{loading ? ' · loading…' : ''}</span>
         <ActionsMenu
           busy={exportBusy}

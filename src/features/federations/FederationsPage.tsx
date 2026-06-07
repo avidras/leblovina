@@ -14,6 +14,7 @@ import { Tooltip } from '@/components/ui/tooltip'
 import { Dialog, DialogField } from '@/components/ui/dialog'
 import { useConfirm } from '@/components/ui/confirm'
 import { ActionsMenu } from '@/components/ui/menu'
+import { FilterPanel } from '@/components/ui/filter-panel'
 import { CountryLabel } from '@/components/ui/country'
 import { Pagination } from '@/components/ui/pagination'
 import { withFlag } from '@/lib/countries'
@@ -142,18 +143,20 @@ export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <Input className="max-w-xs" placeholder="Search name / country / code…" value={q} onChange={(e) => { setQ(e.target.value); resetPage() }} />
-        <Select value={conf} onChange={(e) => { setConf(e.target.value); resetPage() }}>
-          <option value="">All confederations</option>
-          {CONFEDERATIONS.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </Select>
-        <Select value={status} onChange={(e) => { setStatus(e.target.value); resetPage() }}>
-          <option value="">All statuses</option>
-          {FEDERATION_STATUSES.map((s) => (
-            <option key={s} value={s}>{statusLabel(s)}</option>
-          ))}
-        </Select>
+        <FilterPanel activeCount={[conf, status].filter(Boolean).length}>
+          <Select className="w-full" value={conf} onChange={(e) => { setConf(e.target.value); resetPage() }}>
+            <option value="">All confederations</option>
+            {CONFEDERATIONS.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </Select>
+          <Select className="w-full" value={status} onChange={(e) => { setStatus(e.target.value); resetPage() }}>
+            <option value="">All statuses</option>
+            {FEDERATION_STATUSES.map((s) => (
+              <option key={s} value={s}>{statusLabel(s)}</option>
+            ))}
+          </Select>
+        </FilterPanel>
         <span className="ml-auto text-sm text-neutral-500">{totalItems.toLocaleString()} federations{loading ? ' · loading…' : ''}</span>
         <ActionsMenu
           busy={batchBusy}
