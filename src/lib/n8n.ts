@@ -1,13 +1,21 @@
 import { pb, type Federation } from './pb'
 
-// UI triggers n8n workflows via webhook URLs held in env vars (never hardcoded).
-const DISCOVER_CLUBS_URL = import.meta.env.VITE_N8N_DISCOVER_CLUBS_URL as string | undefined
-const BATCH_PROCESS_URL = import.meta.env.VITE_N8N_BATCH_PROCESS_URL as string | undefined
-const EXTRACT_CLUBS_URL = import.meta.env.VITE_N8N_EXTRACT_CLUBS_URL as string | undefined
-const BATCH_ENRICH_URL = import.meta.env.VITE_N8N_BATCH_ENRICH_URL as string | undefined
-const ENGLISHIZE_CLUBS_URL = import.meta.env.VITE_N8N_ENGLISHIZE_CLUBS_URL as string | undefined
-const SCRAPE_ENQUEUE_URL = import.meta.env.VITE_N8N_SCRAPE_ENQUEUE_URL as string | undefined
-const SITE_SCRAPE_URL = import.meta.env.VITE_N8N_SITE_SCRAPE_URL as string | undefined
+// UI triggers n8n workflows via webhooks. Each URL defaults to the known n8n instance +
+// webhook path, so the buttons work without per-var build args (a recurring deploy footgun:
+// Vite only inlines VITE_* present at build time). A VITE_* env var, when set, overrides the
+// default (e.g. to point at a different n8n instance).
+const N8N_BASE = ((import.meta.env.VITE_N8N_BASE_URL as string | undefined) || 'https://n8n-2.biceps.digital').replace(/\/+$/, '')
+const wh = (envVar: unknown, path: string): string => {
+  const v = typeof envVar === 'string' ? envVar.trim() : ''
+  return v || `${N8N_BASE}/webhook/${path}`
+}
+const DISCOVER_CLUBS_URL = wh(import.meta.env.VITE_N8N_DISCOVER_CLUBS_URL, 'process-federation')
+const BATCH_PROCESS_URL = wh(import.meta.env.VITE_N8N_BATCH_PROCESS_URL, 'batch-process')
+const EXTRACT_CLUBS_URL = wh(import.meta.env.VITE_N8N_EXTRACT_CLUBS_URL, 'extract-clubs')
+const BATCH_ENRICH_URL = wh(import.meta.env.VITE_N8N_BATCH_ENRICH_URL, 'batch-enrich')
+const ENGLISHIZE_CLUBS_URL = wh(import.meta.env.VITE_N8N_ENGLISHIZE_CLUBS_URL, 'englishize-clubs')
+const SCRAPE_ENQUEUE_URL = wh(import.meta.env.VITE_N8N_SCRAPE_ENQUEUE_URL, 'scrape-enqueue')
+const SITE_SCRAPE_URL = wh(import.meta.env.VITE_N8N_SITE_SCRAPE_URL, 'site-scrape-driver')
 
 export interface TriggerResult {
   ok: boolean

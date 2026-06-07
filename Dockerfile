@@ -10,16 +10,27 @@ WORKDIR /app
 # (mark each env var "Available at Buildtime"); we promote them to ENV so `pnpm build` sees
 # them. Changing any of these requires a redeploy (rebuild). VITE_PB_URL is optional in prod
 # (the app falls back to same-origin, since PocketBase serves this SPA).
+# NOTE: these are OPTIONAL — src/lib/n8n.ts defaults every webhook URL to the n8n instance +
+# path, so the app works even if none are passed. Set a var here (+ in Coolify, buildtime) only
+# to override a specific webhook (e.g. point at a different n8n).
 ARG VITE_PB_URL
+ARG VITE_N8N_BASE_URL
 ARG VITE_N8N_DISCOVER_CLUBS_URL
 ARG VITE_N8N_BATCH_PROCESS_URL
 ARG VITE_N8N_EXTRACT_CLUBS_URL
 ARG VITE_N8N_BATCH_ENRICH_URL
+ARG VITE_N8N_ENGLISHIZE_CLUBS_URL
+ARG VITE_N8N_SITE_SCRAPE_URL
+ARG VITE_N8N_SCRAPE_ENQUEUE_URL
 ENV VITE_PB_URL=$VITE_PB_URL \
+    VITE_N8N_BASE_URL=$VITE_N8N_BASE_URL \
     VITE_N8N_DISCOVER_CLUBS_URL=$VITE_N8N_DISCOVER_CLUBS_URL \
     VITE_N8N_BATCH_PROCESS_URL=$VITE_N8N_BATCH_PROCESS_URL \
     VITE_N8N_EXTRACT_CLUBS_URL=$VITE_N8N_EXTRACT_CLUBS_URL \
-    VITE_N8N_BATCH_ENRICH_URL=$VITE_N8N_BATCH_ENRICH_URL
+    VITE_N8N_BATCH_ENRICH_URL=$VITE_N8N_BATCH_ENRICH_URL \
+    VITE_N8N_ENGLISHIZE_CLUBS_URL=$VITE_N8N_ENGLISHIZE_CLUBS_URL \
+    VITE_N8N_SITE_SCRAPE_URL=$VITE_N8N_SITE_SCRAPE_URL \
+    VITE_N8N_SCRAPE_ENQUEUE_URL=$VITE_N8N_SCRAPE_ENQUEUE_URL
 # Install deps first for layer caching (packageManager pin drives the pnpm version).
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
