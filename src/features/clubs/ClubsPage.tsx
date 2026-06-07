@@ -186,15 +186,13 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
         <Table>
           <THead>
             <TR>
-              <TH sortable sorted={sortedOf('name')} onClick={() => toggleSort('name')}>Club</TH>
+              <TH sortable sorted={sortedOf('name')} onClick={() => toggleSort('name')} className="min-w-[220px]">Club</TH>
               <TH sortable sorted={sortedOf('country')} onClick={() => toggleSort('country')}>Country</TH>
-              <TH sortable sorted={sortedOf('region')} onClick={() => toggleSort('region')}>Region</TH>
               <TH sortable sorted={sortedOf('city')} onClick={() => toggleSort('city')}>City</TH>
               <TH>Website</TH>
               <TH>Web status</TH>
               <TH>Conf.</TH>
               <TH>Type</TH>
-              <TH>Detail</TH>
               <TH className="text-right">Contacts</TH>
               <TH sortable sorted={sortedOf('status')} onClick={() => toggleSort('status')}>Status</TH>
               <TH>Last scrape</TH>
@@ -203,9 +201,11 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
           <TBody>
             {rows.map((c) => (
               <TR key={c.id}>
-                <TD className="cursor-pointer font-medium hover:text-blue-600" onClick={() => setOpenId(c.id)}>{c.name}</TD>
-                <TD><CountryLabel country={c.country} /></TD>
-                <TD>{c.region || '—'}</TD>
+                <TD className="min-w-[220px] cursor-pointer font-medium hover:text-blue-600" onClick={() => setOpenId(c.id)}>{c.name}</TD>
+                <TD>
+                  <CountryLabel country={c.country} />
+                  {c.region && <div className="text-xs text-neutral-500">{c.region}</div>}
+                </TD>
                 <TD>{c.city || '—'}</TD>
                 <TD className="max-w-[200px] truncate">
                   {c.website_url ? (
@@ -213,6 +213,13 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
                       {c.website_url.replace(/^https?:\/\//, '')}
                     </a>
                   ) : <span className="text-neutral-400">none</span>}
+                  {c.detail_url && (
+                    <div className="truncate text-xs">
+                      <a className="text-blue-600 hover:underline" href={c.detail_url} target="_blank" rel="noreferrer">
+                        Federation detail ↗
+                      </a>
+                    </div>
+                  )}
                 </TD>
                 <TD>
                   {c.website_status
@@ -227,11 +234,6 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
                 <TD>
                   {c.club_type && c.club_type !== 'unknown'
                     ? <Badge tone={clubTypeTone(c.club_type)}>{c.club_type === 'multisport' ? 'multi' : 'VB'}</Badge>
-                    : <span className="text-neutral-400">—</span>}
-                </TD>
-                <TD>
-                  {c.detail_url
-                    ? <a className="text-blue-600 hover:underline" href={c.detail_url} target="_blank" rel="noreferrer">page ↗</a>
                     : <span className="text-neutral-400">—</span>}
                 </TD>
                 <TD className="text-right tabular-nums">
