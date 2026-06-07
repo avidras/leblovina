@@ -20,7 +20,7 @@ import { Dialog, DialogField } from '@/components/ui/dialog'
 import { useConfirm } from '@/components/ui/confirm'
 import { CountryLabel } from '@/components/ui/country'
 import { Pagination } from '@/components/ui/pagination'
-import { withFlag, countryFlag } from '@/lib/countries'
+import { withFlag } from '@/lib/countries'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
 type SortKey = 'name' | 'country' | 'city' | 'status' | 'last_scraped' | 'website_url' | 'website_status' | 'website_confidence' | 'club_type'
@@ -80,7 +80,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
   const [enrichMsg, setEnrichMsg] = useState<string | null>(null)
   const [openId, setOpenId] = useState<string | null>(null)
   const { confirm, confirmElement } = useConfirm()
-  const countries = useCountries()
+  const countries = useCountries('clubs')
   const resetPage = () => setPage(1)
 
   const debouncedQ = useDebouncedValue(q, 300)
@@ -252,16 +252,6 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <Input className="max-w-xs" placeholder="Search club / city / region…" value={q} onChange={(e) => { setQ(e.target.value); resetPage() }} />
-        {country && (
-          <button
-            className="inline-flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm text-neutral-700 hover:bg-neutral-50"
-            onClick={() => { setCountry(''); clearUrlParam('country'); resetPage() }}
-            title="Clear country filter"
-          >
-            Country: <span className="font-medium">{countryFlag(country) && `${countryFlag(country)} `}{country}</span>
-            <span aria-hidden className="text-neutral-400">✕</span>
-          </button>
-        )}
         <FilterPanel activeCount={[country, hasSite, wsFilter, wcFilter, ctFilter].filter(Boolean).length}>
           <Select className="w-full" value={country} onChange={(e) => { setCountry(e.target.value); if (!e.target.value) clearUrlParam('country'); resetPage() }} title="Filter by country">
             <option value="">Any country</option>

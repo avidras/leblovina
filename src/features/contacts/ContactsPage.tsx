@@ -61,7 +61,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
   const [openClub, setOpenClub] = useState<Club | null>(null)
   const [exportMsg, setExportMsg] = useState<string | null>(null)
   const [exportBusy, setExportBusy] = useState(false)
-  const countries = useCountries()
+  const countries = useCountries('contacts')
   const resetPage = () => setPage(1)
 
   const debouncedQ = useDebouncedValue(q, 300)

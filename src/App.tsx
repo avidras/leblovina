@@ -7,8 +7,9 @@ import { useCollectionTotal } from '@/hooks/useCollectionTotal'
 import { FederationsPage } from '@/features/federations/FederationsPage'
 import { ClubsPage } from '@/features/clubs/ClubsPage'
 import { ContactsPage } from '@/features/contacts/ContactsPage'
+import { DashboardPage } from '@/features/dashboard/DashboardPage'
 
-const VIEWS = ['federations', 'clubs', 'contacts'] as const
+const VIEWS = ['dashboard', 'federations', 'clubs', 'contacts'] as const
 type View = (typeof VIEWS)[number]
 
 // The current view lives in the URL path (`/federations`, `/clubs`) so it
@@ -16,7 +17,7 @@ type View = (typeof VIEWS)[number]
 // so deep links resolve in prod the same as Vite's dev server does.
 function pathToView(path: string): View {
   const seg = path.replace(/^\/+/, '').split('/')[0]
-  return (VIEWS as readonly string[]).includes(seg) ? (seg as View) : 'federations'
+  return (VIEWS as readonly string[]).includes(seg) ? (seg as View) : 'dashboard'
 }
 
 // A navigation target = view + optional filters, encoded in the URL
@@ -71,7 +72,9 @@ export default function App() {
     <div className="min-h-screen bg-neutral-50 text-neutral-900">
       <header className="border-b border-neutral-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center gap-4 px-6 py-3">
-          <span className="font-semibold">Leblovina</span>
+          <button onClick={() => navigate('dashboard')} aria-label="Home" className="flex items-center rounded-md p-0.5 hover:bg-neutral-100">
+            <VolleyballLogo className="h-7 w-7 text-neutral-900" />
+          </button>
           {/* desktop nav */}
           <MainNav view={view} navigate={navigate} className="hidden md:flex" />
           <div className="ml-auto flex items-center gap-3">
@@ -100,7 +103,9 @@ export default function App() {
       </header>
 
       <main className="mx-auto max-w-7xl px-6 py-6">
-        {view === 'federations' ? (
+        {view === 'dashboard' ? (
+          <DashboardPage onNavigate={(v) => navigate(v)} />
+        ) : view === 'federations' ? (
           <FederationsPage onOpenClubs={(c) => navigate('clubs', { country: c })} />
         ) : view === 'clubs' ? (
           // key by country so navigating to a different country re-inits the filter
@@ -113,12 +118,13 @@ export default function App() {
   )
 }
 
-const VIEW_LABELS: Record<View, string> = { federations: 'Federations', clubs: 'Clubs', contacts: 'Contacts' }
+const VIEW_LABELS: Record<View, string> = { dashboard: 'Dashboard', federations: 'Federations', clubs: 'Clubs', contacts: 'Contacts' }
 
 // Nav with a live total chip per view. The hooks live here (not at the top level)
 // so they only run once the user is authed and this subtree mounts.
 function MainNav({ view, navigate, className = '', vertical = false }: { view: View; navigate: (view: View) => void; className?: string; vertical?: boolean }) {
   const totals: Record<View, number | null> = {
+    dashboard: null,
     federations: useCollectionTotal('federations'),
     clubs: useCollectionTotal('clubs'),
     contacts: useCollectionTotal('contacts'),
@@ -155,6 +161,18 @@ function NavButton({ active, onClick, count, children }: { active: boolean; onCl
         </span>
       )}
     </button>
+  )
+}
+
+// Volleyball mark used as the app logo (home link). Inherits currentColor.
+function VolleyballLogo({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden>
+      <circle cx="12" cy="12" r="9.25" />
+      <path d="M12 2.75c-3 3.4-3.2 9.3-.6 14.1" />
+      <path d="M21 9.3c-4.4-1.3-10.3-.2-14.4 3" />
+      <path d="M15.4 21c-1.2-4.4-5-8.7-9.6-10.7" />
+    </svg>
   )
 }
 
