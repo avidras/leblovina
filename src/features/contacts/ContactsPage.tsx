@@ -1,25 +1,62 @@
 import { useMemo, useState } from 'react'
-import { type Contact, VERIFICATION_STATUSES, CONTACT_SOURCE_TYPES } from '@/lib/pb'
-import { useCollection } from '@/hooks/useCollection'
+import { pb, type Contact, VERIFICATION_STATUSES, CONTACT_SOURCE_TYPES } from '@/lib/pb'
+import { usePagedCollection } from '@/hooks/usePagedCollection'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useUrlState, clearUrlParam } from '@/hooks/useUrlState'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogField } from '@/components/ui/dialog'
 import { CountryLabel } from '@/components/ui/country'
+import { Pagination } from '@/components/ui/pagination'
 import { withFlag } from '@/lib/countries'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
 type SortKey = 'club' | 'country' | 'email' | 'position'
 
+// Map the sortable column to its PocketBase field (club/country are relation fields).
+const SORT_FIELD: Record<SortKey, string> = {
+  club: 'club.name',
+  country: 'club.country',
+  email: 'email',
+  position: 'position',
+}
+
+function andFilter(...clauses: (string | false | undefined)[]): string {
+  return clauses.filter(Boolean).map((c) => `(${c})`).join(' && ')
+}
+
+// `unknown`-style defaults mirror the old client-side `(x || 'unverified')` /
+// `(x || 'directory')` defaulting. `q` searches across contact + related-club fields.
+function buildContactsFilter(f: { club: string; vs: string; src: string; q: string }): string {
+  return andFilter(
+    f.club && pb.filter('club = {:v}', { v: f.club }),
+    f.vs && (f.vs === 'unverified' ? "verification_status = 'unverified' || verification_status = ''" : pb.filter('verification_status = {:v}', { v: f.vs })),
+    f.src && (f.src === 'directory' ? "source_type = 'directory' || source_type = ''" : pb.filter('source_type = {:v}', { v: f.src })),
+    f.q && pb.filter('email ~ {:q} || club.name ~ {:q} || position ~ {:q} || phone ~ {:q} || club.country ~ {:q}', { q: f.q }),
+  )
+}
+
 export function ContactsPage({ initialClub }: { initialClub?: string | null } = {}) {
-  const { items, loading, error } = useCollection<Contact>('contacts', '-created', 'club')
   const [q, setQ] = useUrlState('q')
   const [club, setClub] = useState(initialClub ?? '')
   const [vsFilter, setVsFilter] = useUrlState('vs')
   const [srcFilter, setSrcFilter] = useUrlState('src')
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'club', dir: 'asc' })
+  const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(100)
   const [openId, setOpenId] = useState<string | null>(null)
+  const resetPage = () => setPage(1)
+
+  const debouncedQ = useDebouncedValue(q, 300)
+  const filter = useMemo(
+    () => buildContactsFilter({ club, vs: vsFilter, src: srcFilter, q: debouncedQ.trim() }),
+    [club, vsFilter, srcFilter, debouncedQ],
+  )
+  const sortStr = `${sort.dir === 'asc' ? '+' : '-'}${SORT_FIELD[sort.key]}`
+  const { items, totalItems, totalPages, loading, error } = usePagedCollection<Contact>('contacts', {
+    page, perPage, sort: sortStr, filter, expand: 'club',
+  })
 
   const clubName = (c: Contact) => c.expand?.club?.name ?? ''
   const clubCountry = (c: Contact) => c.expand?.club?.country ?? ''
@@ -30,27 +67,9 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
     [club, items],
   )
 
-  const rows = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    let out = items.filter((c) => {
-      if (club && c.club !== club) return false
-      if (vsFilter && (c.verification_status || 'unverified') !== vsFilter) return false
-      if (srcFilter && (c.source_type || 'directory') !== srcFilter) return false
-      if (needle && !`${c.email} ${clubName(c)} ${c.position} ${c.phone} ${clubCountry(c)}`.toLowerCase().includes(needle))
-        return false
-      return true
-    })
-    out = [...out].sort((a, b) => {
-      const get = (c: Contact) =>
-        (sort.key === 'club' ? clubName(c) : sort.key === 'country' ? clubCountry(c) : (c[sort.key] ?? '')).toString().toLowerCase()
-      const av = get(a), bv = get(b)
-      return (av < bv ? -1 : av > bv ? 1 : 0) * (sort.dir === 'asc' ? 1 : -1)
-    })
-    return out
-  }, [items, q, club, vsFilter, srcFilter, sort])
-
   function toggleSort(key: SortKey) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }))
+    resetPage()
   }
   const sortedOf = (key: SortKey) => (sort.key === key ? sort.dir : (false as const))
 
@@ -59,33 +78,33 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Input className="max-w-xs" placeholder="Search email / club / position…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input className="max-w-xs" placeholder="Search email / club / position…" value={q} onChange={(e) => { setQ(e.target.value); resetPage() }} />
         {club && (
           <button
             className="inline-flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm text-neutral-700 hover:bg-neutral-50"
-            onClick={() => { setClub(''); clearUrlParam('club') }}
+            onClick={() => { setClub(''); clearUrlParam('club'); resetPage() }}
             title="Clear club filter"
           >
             Club: <span className="font-medium">{activeClubName}</span>
             <span aria-hidden className="text-neutral-400">✕</span>
           </button>
         )}
-        <Select value={srcFilter} onChange={(e) => setSrcFilter(e.target.value)}>
+        <Select value={srcFilter} onChange={(e) => { setSrcFilter(e.target.value); resetPage() }}>
           <option value="">Any source</option>
           {CONTACT_SOURCE_TYPES.map((s) => (
             <option key={s} value={s}>{s}</option>
           ))}
         </Select>
-        <Select value={vsFilter} onChange={(e) => setVsFilter(e.target.value)}>
+        <Select value={vsFilter} onChange={(e) => { setVsFilter(e.target.value); resetPage() }}>
           <option value="">Any verification</option>
           {VERIFICATION_STATUSES.map((s) => (
             <option key={s} value={s}>{s}</option>
           ))}
         </Select>
-        <span className="ml-auto text-sm text-neutral-500">{rows.length} / {items.length}{loading ? ' · loading…' : ''}</span>
+        <span className="ml-auto text-sm text-neutral-500">{totalItems.toLocaleString()} contacts{loading ? ' · loading…' : ''}</span>
       </div>
 
-      {items.length === 0 && !loading ? (
+      {totalItems === 0 && !loading ? (
         <div className="rounded-lg border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-500">
           No contacts yet. They’re seeded during club extraction (directory lists/PDFs/detail pages) and Phase-3 site scraping.
         </div>
@@ -104,7 +123,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
             </TR>
           </THead>
           <TBody>
-            {rows.map((c) => (
+            {items.map((c) => (
               <TR key={c.id}>
                 <TD className="cursor-pointer font-medium hover:text-blue-600" onClick={() => setOpenId(c.id)}>{clubName(c) || '—'}</TD>
                 <TD><CountryLabel country={clubCountry(c)} /></TD>
@@ -135,6 +154,9 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
           </TBody>
         </Table>
       )}
+
+      <Pagination page={page} perPage={perPage} totalItems={totalItems} totalPages={totalPages}
+        onPage={setPage} onPerPage={(n) => { setPerPage(n); resetPage() }} />
 
       <ContactDetailDialog
         contact={items.find((c) => c.id === openId) ?? null}

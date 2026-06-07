@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
-import { CONFEDERATIONS, FEDERATION_STATUSES, type Federation } from '@/lib/pb'
-import { useCollection } from '@/hooks/useCollection'
+import { pb, CONFEDERATIONS, FEDERATION_STATUSES, type Federation } from '@/lib/pb'
+import { usePagedCollection } from '@/hooks/usePagedCollection'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useUrlState } from '@/hooks/useUrlState'
 import { useClubCountsByFederation } from '@/hooks/useClubCounts'
 import { triggerDiscoverClubs, triggerBatchProcess, triggerExtractFederation, type TriggerResult } from '@/lib/n8n'
@@ -12,55 +13,57 @@ import { Tooltip } from '@/components/ui/tooltip'
 import { Dialog, DialogField } from '@/components/ui/dialog'
 import { useConfirm } from '@/components/ui/confirm'
 import { CountryLabel } from '@/components/ui/country'
+import { Pagination } from '@/components/ui/pagination'
 import { withFlag } from '@/lib/countries'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
-type SortKey = 'fivb_code' | 'name' | 'country' | 'confederation' | 'status' | 'clubs' | 'last_scraped'
+// `clubs` is no longer sortable server-side (it's an aggregate, not a column);
+// `status` sorts alphabetically (PocketBase can only ORDER BY real columns).
+type SortKey = 'fivb_code' | 'name' | 'country' | 'confederation' | 'status' | 'last_scraped'
 
-// Status sort order — scraped federations first, untouched (new) last.
-const STATUS_RANK: Record<string, number> = { scraped: 0, needs_review: 1, error: 2, new: 3 }
-const statusRank = (s: string) => (s in STATUS_RANK ? STATUS_RANK[s] : 99)
+function andFilter(...clauses: (string | false | undefined)[]): string {
+  return clauses.filter(Boolean).map((c) => `(${c})`).join(' && ')
+}
+
+function buildFederationsFilter(f: { conf: string; status: string; q: string }): string {
+  return andFilter(
+    f.conf && pb.filter('confederation = {:v}', { v: f.conf }),
+    f.status && pb.filter('status = {:v}', { v: f.status }),
+    f.q && pb.filter('name ~ {:q} || country ~ {:q} || fivb_code ~ {:q}', { q: f.q }),
+  )
+}
 
 export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string) => void }) {
-  const { items, loading, error } = useCollection<Federation>('federations', 'name')
-  const clubCounts = useClubCountsByFederation()
   const [conf, setConf] = useUrlState('conf')
   const [status, setStatus] = useUrlState('status')
   const [q, setQ] = useUrlState('q')
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'status', dir: 'asc' })
+  const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(100)
   const [openId, setOpenId] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [result, setResult] = useState<{ id: string; r: TriggerResult } | null>(null)
   const [batchMsg, setBatchMsg] = useState<string | null>(null)
   const [batchBusy, setBatchBusy] = useState(false)
   const { confirm, confirmElement } = useConfirm()
+  const resetPage = () => setPage(1)
 
-  const rows = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    let out = items.filter((f) => {
-      if (conf && f.confederation !== conf) return false
-      if (status && f.status !== status) return false
-      if (needle && !`${f.name} ${f.country} ${f.fivb_code}`.toLowerCase().includes(needle)) return false
-      return true
-    })
-    out = [...out].sort((a, b) => {
-      let cmp: number
-      if (sort.key === 'status') {
-        cmp = statusRank(a.status) - statusRank(b.status)
-      } else if (sort.key === 'clubs') {
-        cmp = (clubCounts[a.id] || 0) - (clubCounts[b.id] || 0)
-      } else {
-        const av = (a[sort.key] ?? '').toString().toLowerCase()
-        const bv = (b[sort.key] ?? '').toString().toLowerCase()
-        cmp = av < bv ? -1 : av > bv ? 1 : 0
-      }
-      return cmp * (sort.dir === 'asc' ? 1 : -1)
-    })
-    return out
-  }, [items, conf, status, q, sort, clubCounts])
+  const debouncedQ = useDebouncedValue(q, 300)
+  const filter = useMemo(
+    () => buildFederationsFilter({ conf, status, q: debouncedQ.trim() }),
+    [conf, status, debouncedQ],
+  )
+  const sortStr = `${sort.dir === 'asc' ? '+' : '-'}${sort.key}`
+  const { items, totalItems, totalPages, loading, error } = usePagedCollection<Federation>('federations', {
+    page, perPage, sort: sortStr, filter,
+  })
+
+  const fedIds = useMemo(() => items.map((f) => f.id), [items])
+  const clubCounts = useClubCountsByFederation(fedIds)
 
   function toggleSort(key: SortKey) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }))
+    resetPage()
   }
   function sortedOf(key: SortKey) {
     return sort.key === key ? sort.dir : (false as const)
@@ -83,19 +86,31 @@ export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string
     setBusyId(null)
   }
 
+  // Acts on the whole filtered set: confirm with the server-side total, then fetch all ids.
   async function batchProcess() {
-    const ids = rows.map((f) => f.id)
-    if (ids.length === 0) return
+    if (totalItems === 0) return
     const ok = await confirm({
       title: 'Process federations',
       message:
-        `Process ${ids.length} federation(s)? Each runs discovery (+ gated extraction) — this spends ` +
+        `Process ${totalItems} federation(s)? Each runs discovery (+ gated extraction) — this spends ` +
         `LLM/Firecrawl/Serper credits and runs in the background (~1/min).`,
-      confirmLabel: `Process ${ids.length}`,
+      confirmLabel: `Process ${totalItems}`,
     })
     if (!ok) return
     setBatchBusy(true)
     setBatchMsg(null)
+    let ids: string[]
+    try {
+      const list = await pb.collection('federations').getFullList<{ id: string }>({
+        filter: filter || undefined, fields: 'id', batch: 500,
+      })
+      ids = list.map((f) => f.id)
+    } catch (e) {
+      setBatchBusy(false)
+      setBatchMsg(`Failed: ${(e as Error).message}`)
+      return
+    }
+    if (ids.length === 0) { setBatchBusy(false); return }
     const r = await triggerBatchProcess(ids)
     setBatchBusy(false)
     setBatchMsg(
@@ -108,26 +123,26 @@ export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Input className="max-w-xs" placeholder="Search name / country / code…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <Select value={conf} onChange={(e) => setConf(e.target.value)}>
+        <Input className="max-w-xs" placeholder="Search name / country / code…" value={q} onChange={(e) => { setQ(e.target.value); resetPage() }} />
+        <Select value={conf} onChange={(e) => { setConf(e.target.value); resetPage() }}>
           <option value="">All confederations</option>
           {CONFEDERATIONS.map((c) => (
             <option key={c} value={c}>{c}</option>
           ))}
         </Select>
-        <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+        <Select value={status} onChange={(e) => { setStatus(e.target.value); resetPage() }}>
           <option value="">All statuses</option>
           {FEDERATION_STATUSES.map((s) => (
             <option key={s} value={s}>{s}</option>
           ))}
         </Select>
-        <span className="ml-auto text-sm text-neutral-500">{rows.length} / {items.length}{loading ? ' · loading…' : ''}</span>
+        <span className="ml-auto text-sm text-neutral-500">{totalItems.toLocaleString()} federations{loading ? ' · loading…' : ''}</span>
         <Tooltip
           side="bottom"
           content="Batch-process every federation in the current filter through discover → gate → extract, in the background (~1/min). Spends LLM/Firecrawl/Serper credits."
         >
-          <Button size="sm" variant="outline" disabled={batchBusy || rows.length === 0} onClick={batchProcess}>
-            {batchBusy ? 'Queuing…' : `Process ${rows.length}`}
+          <Button size="sm" variant="outline" disabled={batchBusy || totalItems === 0} onClick={batchProcess}>
+            {batchBusy ? 'Queuing…' : `Process ${totalItems}`}
           </Button>
         </Tooltip>
       </div>
@@ -140,13 +155,13 @@ export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string
             <TH sortable sorted={sortedOf('name')} onClick={() => toggleSort('name')} className="min-w-[260px]">Federation</TH>
             <TH sortable sorted={sortedOf('country')} onClick={() => toggleSort('country')}>Country</TH>
             <TH sortable sorted={sortedOf('status')} onClick={() => toggleSort('status')}>Status</TH>
-            <TH sortable sorted={sortedOf('clubs')} onClick={() => toggleSort('clubs')} className="text-right">Clubs</TH>
+            <TH className="text-right">Clubs</TH>
             <TH>Website</TH>
             <TH className="text-right">Actions</TH>
           </TR>
         </THead>
         <TBody>
-          {rows.map((f) => (
+          {items.map((f) => (
             <FederationRow
               key={f.id}
               fed={f}
@@ -160,6 +175,9 @@ export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string
           ))}
         </TBody>
       </Table>
+
+      <Pagination page={page} perPage={perPage} totalItems={totalItems} totalPages={totalPages}
+        onPage={setPage} onPerPage={(n) => { setPerPage(n); resetPage() }} />
 
       <FederationDetailDialog
         fed={items.find((f) => f.id === openId) ?? null}

@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
-import { type Club, type WebsiteConfidence, type ClubType, WEBSITE_STATUSES, WEBSITE_CONFIDENCES, CLUB_TYPES } from '@/lib/pb'
-import { useCollection } from '@/hooks/useCollection'
+import { useEffect, useMemo, useState } from 'react'
+import { pb, type Club, type WebsiteConfidence, type ClubType, WEBSITE_STATUSES, WEBSITE_CONFIDENCES, CLUB_TYPES } from '@/lib/pb'
+import { usePagedCollection } from '@/hooks/usePagedCollection'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useUrlState, clearUrlParam } from '@/hooks/useUrlState'
 import { useContactCountsByClub } from '@/hooks/useContactCounts'
 import { triggerBatchEnrich } from '@/lib/n8n'
@@ -12,10 +13,33 @@ import { Tooltip } from '@/components/ui/tooltip'
 import { Dialog, DialogField } from '@/components/ui/dialog'
 import { useConfirm } from '@/components/ui/confirm'
 import { CountryLabel } from '@/components/ui/country'
+import { Pagination } from '@/components/ui/pagination'
 import { withFlag, countryFlag } from '@/lib/countries'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
-type SortKey = 'name' | 'country' | 'region' | 'city' | 'status'
+type SortKey = 'name' | 'country' | 'city' | 'status'
+
+// Combine filter clauses with AND, wrapping each clause so OR-groups stay scoped.
+function andFilter(...clauses: (string | false | undefined)[]): string {
+  return clauses.filter(Boolean).map((c) => `(${c})`).join(' && ')
+}
+
+// Build the PocketBase filter for the current club controls. `unknown`-style
+// selections match both the literal 'unknown' and empty string (mirrors the old
+// client-side `(x || 'unknown')` defaulting).
+function buildClubsFilter(f: {
+  country: string; hasSite: string; ws: string; wc: string; ct: string; q: string
+}): string {
+  return andFilter(
+    f.country && pb.filter('country = {:v}', { v: f.country }),
+    f.hasSite === 'yes' && "website_url != ''",
+    f.hasSite === 'no' && "website_url = ''",
+    f.ws && (f.ws === 'unknown' ? "website_status = 'unknown' || website_status = ''" : pb.filter('website_status = {:v}', { v: f.ws })),
+    f.wc && (f.wc === 'unknown' ? "website_confidence = 'unknown' || website_confidence = ''" : pb.filter('website_confidence = {:v}', { v: f.wc })),
+    f.ct && (f.ct === 'unknown' ? "club_type = 'unknown' || club_type = ''" : pb.filter('club_type = {:v}', { v: f.ct })),
+    f.q && pb.filter('name ~ {:q} || country ~ {:q} || region ~ {:q} || city ~ {:q}', { q: f.q }),
+  )
+}
 
 // A = trusted (green), B = probable (blue), C = low-confidence/review (amber).
 function confidenceTone(c: WebsiteConfidence | ''): 'green' | 'blue' | 'amber' | 'neutral' {
@@ -37,8 +61,6 @@ function clubTypeTone(t: ClubType | ''): 'blue' | 'amber' | 'neutral' {
 }
 
 export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?: string | null; onOpenContacts?: (clubId: string) => void } = {}) {
-  const { items, loading, error } = useCollection<Club>('clubs', 'name')
-  const contactCounts = useContactCountsByClub()
   const [q, setQ] = useUrlState('q')
   const [country, setCountry] = useState(initialCountry ?? '')
   const [hasSite, setHasSite] = useUrlState('hasSite')
@@ -46,58 +68,73 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
   const [wcFilter, setWcFilter] = useUrlState('wc')
   const [ctFilter, setCtFilter] = useUrlState('ct')
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'name', dir: 'asc' })
+  const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(100)
   const [enrichBusy, setEnrichBusy] = useState(false)
   const [enrichMsg, setEnrichMsg] = useState<string | null>(null)
   const [openId, setOpenId] = useState<string | null>(null)
   const { confirm, confirmElement } = useConfirm()
+  const resetPage = () => setPage(1)
 
-  const rows = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    let out = items.filter((c) => {
-      if (country && c.country !== country) return false
-      if (hasSite === 'yes' && !c.website_url) return false
-      if (hasSite === 'no' && c.website_url) return false
-      if (wsFilter && (c.website_status || 'unknown') !== wsFilter) return false
-      if (wcFilter && (c.website_confidence || 'unknown') !== wcFilter) return false
-      if (ctFilter && (c.club_type || 'unknown') !== ctFilter) return false
-      if (needle && !`${c.name} ${c.country} ${c.region} ${c.city}`.toLowerCase().includes(needle)) return false
-      return true
-    })
-    out = [...out].sort((a, b) => {
-      const av = (a[sort.key] ?? '').toString().toLowerCase()
-      const bv = (b[sort.key] ?? '').toString().toLowerCase()
-      return (av < bv ? -1 : av > bv ? 1 : 0) * (sort.dir === 'asc' ? 1 : -1)
-    })
-    return out
-  }, [items, q, country, hasSite, wsFilter, wcFilter, ctFilter, sort])
+  const debouncedQ = useDebouncedValue(q, 300)
+  const filter = useMemo(
+    () => buildClubsFilter({ country, hasSite, ws: wsFilter, wc: wcFilter, ct: ctFilter, q: debouncedQ.trim() }),
+    [country, hasSite, wsFilter, wcFilter, ctFilter, debouncedQ],
+  )
+  const sortStr = `${sort.dir === 'asc' ? '+' : '-'}${sort.key}`
+  const { items, totalItems, totalPages, loading, error } = usePagedCollection<Club>('clubs', {
+    page, perPage, sort: sortStr, filter,
+  })
+
+  const clubIds = useMemo(() => items.map((c) => c.id), [items])
+  const contactCounts = useContactCountsByClub(clubIds)
 
   function toggleSort(key: SortKey) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }))
+    resetPage()
   }
   const sortedOf = (key: SortKey) => (sort.key === key ? sort.dir : (false as const))
 
-  // Clubs never resolved yet (no resolve attempt recorded).
-  const unresolvedRows = useMemo(
-    () => rows.filter((c) => !c.website_status || c.website_status === 'unknown'),
-    [rows],
-  )
-  // Serper-resolved live clubs — the only ones the belongs-check applies to.
-  const recheckRows = useMemo(
-    () => rows.filter((c) => c.website_source === 'serper' && c.website_status === 'live'),
-    [rows],
-  )
+  // Batch-action subset filters (computed over the WHOLE filtered set, not just the page).
+  const unresolvedFilter = useMemo(() => andFilter(filter, "website_status = 'unknown' || website_status = ''"), [filter])
+  const recheckFilter = useMemo(() => andFilter(filter, "website_source = 'serper' && website_status = 'live'"), [filter])
+  const harvestFilter = useMemo(() => andFilter(filter, "website_status = 'live'"), [filter])
+  const [unresolvedCount, setUnresolvedCount] = useState(0)
+  const [recheckCount, setRecheckCount] = useState(0)
+  const [harvestCount, setHarvestCount] = useState(0)
+
+  // Server-side counts for the batch buttons; recomputed when the filter changes
+  // and on every (realtime) page refetch (`items`) so they track status changes.
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const [u, r, h] = await Promise.all([
+          pb.collection('clubs').getList(1, 1, { filter: unresolvedFilter || undefined, fields: 'id' }),
+          pb.collection('clubs').getList(1, 1, { filter: recheckFilter || undefined, fields: 'id' }),
+          pb.collection('clubs').getList(1, 1, { filter: harvestFilter || undefined, fields: 'id' }),
+        ])
+        if (alive) { setUnresolvedCount(u.totalItems); setRecheckCount(r.totalItems); setHarvestCount(h.totalItems) }
+      } catch { /* non-fatal */ }
+    })()
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unresolvedFilter, recheckFilter, harvestFilter, items])
 
   // 'unresolved' → only clubs never resolved; 'all' → re-resolve everything (force);
-  // 'recheck' → re-run the belongs-check on serper live URLs (no Serper spend).
-  async function resolveWebsites(mode: 'all' | 'unresolved' | 'recheck') {
-    const target = mode === 'all' ? rows : mode === 'recheck' ? recheckRows : unresolvedRows
-    const ids = target.map((c) => c.id)
-    if (ids.length === 0) return
+  // 'recheck' → re-run the belongs-check on serper live URLs (no Serper spend);
+  // 'harvest' → re-check + harvest signals (emails/contact/socials/lang) on ALL live URLs,
+  //             any source (official_list/manual included). No Serper spend.
+  // Acts on the whole filtered set: confirm with the server-side count, then fetch all ids.
+  async function resolveWebsites(mode: 'all' | 'unresolved' | 'recheck' | 'harvest') {
+    const count = mode === 'all' ? totalItems : mode === 'recheck' ? recheckCount : mode === 'harvest' ? harvestCount : unresolvedCount
+    if (count === 0) return
     const what =
-      mode === 'all' ? `re-resolve ALL ${ids.length}`
-      : mode === 'recheck' ? `re-check confidence on ${ids.length} serper`
-      : `resolve ${ids.length} unresolved`
-    const verb = mode === 'recheck' ? 'AI' : 'Serper + AI'
+      mode === 'all' ? `re-resolve ALL ${count}`
+      : mode === 'recheck' ? `re-check confidence on ${count} serper`
+      : mode === 'harvest' ? `re-check + harvest signals on ${count} live`
+      : `resolve ${count} unresolved`
+    const verb = (mode === 'recheck' || mode === 'harvest') ? 'AI' : 'Serper + AI'
     const ok = await confirm({
       title: 'Resolve club websites',
       message: `${verb} ${what} club website(s)? Runs in the background.`,
@@ -106,7 +143,20 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
     if (!ok) return
     setEnrichBusy(true)
     setEnrichMsg(null)
-    const r = await triggerBatchEnrich(ids, mode === 'all', mode === 'recheck')
+    const targetFilter = mode === 'all' ? filter : mode === 'recheck' ? recheckFilter : mode === 'harvest' ? harvestFilter : unresolvedFilter
+    let ids: string[]
+    try {
+      const list = await pb.collection('clubs').getFullList<{ id: string }>({
+        filter: targetFilter || undefined, fields: 'id', batch: 500,
+      })
+      ids = list.map((c) => c.id)
+    } catch (e) {
+      setEnrichBusy(false)
+      setEnrichMsg(`Failed: ${(e as Error).message}`)
+      return
+    }
+    if (ids.length === 0) { setEnrichBusy(false); return }
+    const r = await triggerBatchEnrich(ids, mode === 'all', mode === 'recheck' || mode === 'harvest')
     setEnrichBusy(false)
     setEnrichMsg(r.ok ? `Queued ${ids.length} — updates land live.` : `Failed: ${r.error || r.status}`)
   }
@@ -116,69 +166,77 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Input className="max-w-xs" placeholder="Search club / city / region…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input className="max-w-xs" placeholder="Search club / city / region…" value={q} onChange={(e) => { setQ(e.target.value); resetPage() }} />
         {country && (
           <button
             className="inline-flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm text-neutral-700 hover:bg-neutral-50"
-            onClick={() => { setCountry(''); clearUrlParam('country') }}
+            onClick={() => { setCountry(''); clearUrlParam('country'); resetPage() }}
             title="Clear country filter"
           >
             Country: <span className="font-medium">{countryFlag(country) && `${countryFlag(country)} `}{country}</span>
             <span aria-hidden className="text-neutral-400">✕</span>
           </button>
         )}
-        <Select value={hasSite} onChange={(e) => setHasSite(e.target.value)}>
+        <Select value={hasSite} onChange={(e) => { setHasSite(e.target.value); resetPage() }}>
           <option value="">Any website</option>
           <option value="yes">Has website</option>
           <option value="no">No website</option>
         </Select>
-        <Select value={wsFilter} onChange={(e) => setWsFilter(e.target.value)}>
+        <Select value={wsFilter} onChange={(e) => { setWsFilter(e.target.value); resetPage() }}>
           <option value="">Any web status</option>
           {WEBSITE_STATUSES.map((s) => (
             <option key={s} value={s}>{s}</option>
           ))}
         </Select>
-        <Select value={wcFilter} onChange={(e) => setWcFilter(e.target.value)} title="Filter by website confidence (C = needs review)">
+        <Select value={wcFilter} onChange={(e) => { setWcFilter(e.target.value); resetPage() }} title="Filter by website confidence (C = needs review)">
           <option value="">Any confidence</option>
           {WEBSITE_CONFIDENCES.map((c) => (
             <option key={c} value={c}>{c === 'unknown' ? 'unchecked' : `conf ${c}`}</option>
           ))}
         </Select>
-        <Select value={ctFilter} onChange={(e) => setCtFilter(e.target.value)} title="Filter by club type (volleyball vs multi-sport club)">
+        <Select value={ctFilter} onChange={(e) => { setCtFilter(e.target.value); resetPage() }} title="Filter by club type (volleyball vs multi-sport club)">
           <option value="">Any type</option>
           {CLUB_TYPES.map((t) => (
             <option key={t} value={t}>{t === 'unknown' ? 'unclassified' : t}</option>
           ))}
         </Select>
-        <span className="ml-auto text-sm text-neutral-500">{rows.length} / {items.length}{loading ? ' · loading…' : ''}</span>
+        <span className="ml-auto text-sm text-neutral-500">{totalItems.toLocaleString()} clubs{loading ? ' · loading…' : ''}</span>
         <Tooltip
           side="bottom"
           content="Resolve a website only for clubs in the current filter that were never resolved before (web status unknown). Serper + AI picks the club's own site. Runs in the background."
         >
-          <Button size="sm" variant="outline" disabled={enrichBusy || unresolvedRows.length === 0} onClick={() => resolveWebsites('unresolved')}>
-            {enrichBusy ? 'Queuing…' : `Resolve unresolved (${unresolvedRows.length})`}
+          <Button size="sm" variant="outline" disabled={enrichBusy || unresolvedCount === 0} onClick={() => resolveWebsites('unresolved')}>
+            {enrichBusy ? 'Queuing…' : `Resolve unresolved (${unresolvedCount})`}
           </Button>
         </Tooltip>
         <Tooltip
           side="bottom"
           content="Re-resolve EVERY club in the current filter (incl. already-resolved), re-picking the club's own site via Serper + AI — fixes wrong auto-picked sites. Directory/manual URLs are kept. Runs in the background."
         >
-          <Button size="sm" variant="outline" disabled={enrichBusy || rows.length === 0} onClick={() => resolveWebsites('all')}>
-            {`Re-resolve all (${rows.length})`}
+          <Button size="sm" variant="outline" disabled={enrichBusy || totalItems === 0} onClick={() => resolveWebsites('all')}>
+            {`Re-resolve all (${totalItems})`}
           </Button>
         </Tooltip>
         <Tooltip
           side="bottom"
           content="Re-check whether each Serper-resolved live site actually belongs to the club (sets confidence A/B/C; C = review). No Serper spend — reuses the page already fetched. Runs in the background."
         >
-          <Button size="sm" variant="outline" disabled={enrichBusy || recheckRows.length === 0} onClick={() => resolveWebsites('recheck')}>
-            {`Re-check confidence (${recheckRows.length})`}
+          <Button size="sm" variant="outline" disabled={enrichBusy || recheckCount === 0} onClick={() => resolveWebsites('recheck')}>
+            {`Re-check confidence (${recheckCount})`}
+          </Button>
+        </Tooltip>
+        <Tooltip
+          side="bottom"
+          content="Harvest enrichment signals (emails, contact page, socials, language) from EVERY live site in the current filter — any source, incl. official-list/manual — and re-check confidence on serper ones. No Serper spend; reuses the page fetch. Runs in the background."
+        >
+          <Button size="sm" variant="outline" disabled={enrichBusy || harvestCount === 0} onClick={() => resolveWebsites('harvest')}>
+            {`Harvest all live (${harvestCount})`}
           </Button>
         </Tooltip>
       </div>
       {enrichMsg && <div className="text-sm text-neutral-600">{enrichMsg}</div>}
 
-      {items.length === 0 && !loading ? (
+      {totalItems === 0 && !loading ? (
         <div className="rounded-lg border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-500">
           No clubs yet. Trigger “Discover clubs” on a federation to populate this.
         </div>
@@ -199,7 +257,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
             </TR>
           </THead>
           <TBody>
-            {rows.map((c) => (
+            {items.map((c) => (
               <TR key={c.id}>
                 <TD className="min-w-[220px] cursor-pointer font-medium hover:text-blue-600" onClick={() => setOpenId(c.id)}>{c.name}</TD>
                 <TD>
@@ -252,6 +310,9 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
           </TBody>
         </Table>
       )}
+
+      <Pagination page={page} perPage={perPage} totalItems={totalItems} totalPages={totalPages}
+        onPage={setPage} onPerPage={(n) => { setPerPage(n); resetPage() }} />
 
       <ClubDetailDialog
         club={items.find((c) => c.id === openId) ?? null}

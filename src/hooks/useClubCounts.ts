@@ -1,17 +1,25 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { pb } from '@/lib/pb'
 
-// Count of discovered club rows per federation id. Loads only the `federation`
-// field of every club and reduces to a map, then live-refetches (debounced) on
-// realtime club events — same shape as useCollection, but aggregated.
-export function useClubCountsByFederation(): Record<string, number> {
+// Count of discovered club rows per federation id, scoped to the given
+// (visible-page) federation ids so we don't load the whole clubs collection.
+// Live-refetches (debounced) on realtime club events. Empty ids → {}.
+export function useClubCountsByFederation(federationIds: string[]): Record<string, number> {
   const [counts, setCounts] = useState<Record<string, number>>({})
+  // Stable dependency key — the array identity changes every render.
+  const key = useMemo(() => federationIds.join(','), [federationIds])
 
   const load = useCallback(async () => {
+    const ids = key ? key.split(',') : []
+    if (ids.length === 0) {
+      setCounts({})
+      return
+    }
     try {
+      const filter = ids.map((id) => pb.filter('federation = {:id}', { id })).join(' || ')
       const list = await pb
         .collection('clubs')
-        .getFullList<{ federation: string }>({ batch: 500, fields: 'federation' })
+        .getFullList<{ federation: string }>({ batch: 500, fields: 'federation', filter })
       const next: Record<string, number> = {}
       for (const c of list) {
         if (c.federation) next[c.federation] = (next[c.federation] || 0) + 1
@@ -20,7 +28,7 @@ export function useClubCountsByFederation(): Record<string, number> {
     } catch {
       /* non-fatal: counts just stay as they were */
     }
-  }, [])
+  }, [key])
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null
