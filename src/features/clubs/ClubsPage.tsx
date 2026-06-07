@@ -266,7 +266,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
         <Table>
           <THead>
             <TR>
-              <TH sortable sorted={sortedOf('name')} onClick={() => toggleSort('name')} className="min-w-[340px]">Club</TH>
+              <TH sortable sorted={sortedOf('name')} onClick={() => toggleSort('name')} className="w-[350px] min-w-[350px] max-w-[350px]">Club</TH>
               <TH sortable sorted={sortedOf('country')} onClick={() => toggleSort('country')}>Country</TH>
               <TH sortable sorted={sortedOf('city')} onClick={() => toggleSort('city')}>City</TH>
               <TH>Website</TH>
@@ -281,7 +281,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
           <TBody>
             {items.map((c) => (
               <TR key={c.id}>
-                <TD className="min-w-[340px] cursor-pointer hover:text-blue-600" onClick={() => setOpenId(c.id)}>
+                <TD className="w-[350px] min-w-[350px] max-w-[350px] cursor-pointer hover:text-blue-600" onClick={() => setOpenId(c.id)}>
                   <div className="font-medium">{c.name_en || c.name}</div>
                   {c.name_en && c.name_en !== c.name && (
                     <div className="text-xs text-neutral-500">{c.name}</div>
