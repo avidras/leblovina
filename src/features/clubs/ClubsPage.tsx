@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { pb, type Club, type WebsiteConfidence, type ClubType, WEBSITE_STATUSES, WEBSITE_CONFIDENCES, CLUB_TYPES } from '@/lib/pb'
+import { statusLabel, websiteStatusLabel, websiteSourceLabel, confidenceLabel, confidenceHelp, clubTypeLabel } from '@/lib/labels'
 import { usePagedCollection } from '@/hooks/usePagedCollection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useUrlState, clearUrlParam } from '@/hooks/useUrlState'
@@ -199,19 +200,19 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
         <Select value={wsFilter} onChange={(e) => { setWsFilter(e.target.value); resetPage() }}>
           <option value="">Any web status</option>
           {WEBSITE_STATUSES.map((s) => (
-            <option key={s} value={s}>{s}</option>
+            <option key={s} value={s}>{websiteStatusLabel(s)}</option>
           ))}
         </Select>
         <Select value={wcFilter} onChange={(e) => { setWcFilter(e.target.value); resetPage() }} title="Filter by website confidence (C = needs review)">
           <option value="">Any confidence</option>
           {WEBSITE_CONFIDENCES.map((c) => (
-            <option key={c} value={c}>{c === 'unknown' ? 'unchecked' : `conf ${c}`}</option>
+            <option key={c} value={c}>{c === 'unknown' ? 'Unchecked' : `Conf. ${c}`}</option>
           ))}
         </Select>
         <Select value={ctFilter} onChange={(e) => { setCtFilter(e.target.value); resetPage() }} title="Filter by club type (volleyball vs multi-sport club)">
           <option value="">Any type</option>
           {CLUB_TYPES.map((t) => (
-            <option key={t} value={t}>{t === 'unknown' ? 'unclassified' : t}</option>
+            <option key={t} value={t}>{clubTypeLabel(t)}</option>
           ))}
         </Select>
         <span className="ml-auto text-sm text-neutral-500">{totalItems.toLocaleString()} clubs{loading ? ' · loading…' : ''}</span>
@@ -297,7 +298,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
                     <a className="text-blue-600 hover:underline" href={c.website_url} target="_blank" rel="noreferrer">
                       {c.website_url.replace(/^https?:\/\//, '')}
                     </a>
-                  ) : <span className="text-neutral-400">none</span>}
+                  ) : <span className="text-neutral-400">No website</span>}
                   {c.detail_url && (
                     <div className="truncate text-xs">
                       <a className="text-blue-600 hover:underline" href={c.detail_url} target="_blank" rel="noreferrer">
@@ -308,17 +309,21 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
                 </TD>
                 <TD>
                   {c.website_status
-                    ? <Badge tone={statusTone(c.website_status)}>{c.website_status}</Badge>
+                    ? <Badge tone={statusTone(c.website_status)}>{websiteStatusLabel(c.website_status)}</Badge>
                     : <span className="text-neutral-400">—</span>}
                 </TD>
                 <TD>
                   {c.website_confidence && c.website_confidence !== 'unknown'
-                    ? <Badge tone={confidenceTone(c.website_confidence)}>{c.website_confidence}</Badge>
+                    ? (
+                      <Tooltip side="bottom" content={confidenceHelp(c.website_confidence)}>
+                        <Badge tone={confidenceTone(c.website_confidence)}>{c.website_confidence}</Badge>
+                      </Tooltip>
+                    )
                     : <span className="text-neutral-400">—</span>}
                 </TD>
                 <TD>
                   {c.club_type && c.club_type !== 'unknown'
-                    ? <Badge tone={clubTypeTone(c.club_type)}>{c.club_type === 'multisport' ? 'multi' : 'VB'}</Badge>
+                    ? <Badge tone={clubTypeTone(c.club_type)}>{clubTypeLabel(c.club_type)}</Badge>
                     : <span className="text-neutral-400">—</span>}
                 </TD>
                 <TD className="text-right tabular-nums">
@@ -328,7 +333,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
                     </button>
                   ) : <span className="text-neutral-400">0</span>}
                 </TD>
-                <TD>{c.status ? <Badge tone={statusTone(c.status)}>{c.status}</Badge> : '—'}</TD>
+                <TD>{c.status ? <Badge tone={statusTone(c.status)}>{statusLabel(c.status)}</Badge> : '—'}</TD>
                 <TD className="max-w-[220px] truncate text-xs text-neutral-500" title={c.scrape_note || ''}>
                   {c.scrape_note || '—'}
                 </TD>
@@ -373,9 +378,11 @@ function ClubDetailDialog({
                 <span className="ml-2 text-sm font-normal text-neutral-500">{club.name}</span>
               )}
             </h2>
-            {club.status && <Badge tone={statusTone(club.status)}>{club.status}</Badge>}
+            {club.status && <Badge tone={statusTone(club.status)}>{statusLabel(club.status)}</Badge>}
             {club.website_confidence && club.website_confidence !== 'unknown' && (
-              <Badge tone={confidenceTone(club.website_confidence)}>conf {club.website_confidence}</Badge>
+              <Tooltip side="bottom" content={confidenceHelp(club.website_confidence)}>
+                <Badge tone={confidenceTone(club.website_confidence)}>Conf. {club.website_confidence}</Badge>
+              </Tooltip>
             )}
           </div>
         )
@@ -405,9 +412,9 @@ function ClubDetailDialog({
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">Website</h3>
             <dl className="grid grid-cols-2 gap-x-8 gap-y-3">
               <DialogField label="Website" value={club.website_url} link />
-              <DialogField label="Web status" value={club.website_status} />
-              <DialogField label="Source" value={club.website_source} />
-              <DialogField label="Confidence" value={club.website_confidence === 'unknown' ? '' : club.website_confidence} />
+              <DialogField label="Web status" value={websiteStatusLabel(club.website_status)} />
+              <DialogField label="Source" value={websiteSourceLabel(club.website_source)} />
+              <DialogField label="Confidence" value={confidenceLabel(club.website_confidence)} />
             </dl>
           </section>
 

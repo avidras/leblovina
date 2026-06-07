@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { pb, GATE_MODES, type GateMode } from '@/lib/pb'
 import { getGateMode, setGateMode } from '@/lib/settings'
+import { gateModeLabel } from '@/lib/labels'
 import { Login } from '@/components/Login'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
@@ -126,7 +127,7 @@ function GateSelector() {
       Gate
       <Select value={mode} onChange={(e) => change(e.target.value as GateMode)} className="h-8 text-xs" disabled={mode === ''}>
         {GATE_MODES.map((m) => (
-          <option key={m} value={m}>{m}</option>
+          <option key={m} value={m}>{gateModeLabel(m)}</option>
         ))}
       </Select>
     </label>

@@ -3,6 +3,7 @@ import { pb, type Contact, VERIFICATION_STATUSES, CONTACT_SOURCE_TYPES } from '@
 import { usePagedCollection } from '@/hooks/usePagedCollection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useUrlState, clearUrlParam } from '@/hooks/useUrlState'
+import { verificationLabel, sourceTypeLabel } from '@/lib/labels'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
@@ -92,13 +93,13 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
         <Select value={srcFilter} onChange={(e) => { setSrcFilter(e.target.value); resetPage() }}>
           <option value="">Any source</option>
           {CONTACT_SOURCE_TYPES.map((s) => (
-            <option key={s} value={s}>{s}</option>
+            <option key={s} value={s}>{sourceTypeLabel(s)}</option>
           ))}
         </Select>
         <Select value={vsFilter} onChange={(e) => { setVsFilter(e.target.value); resetPage() }}>
           <option value="">Any verification</option>
           {VERIFICATION_STATUSES.map((s) => (
-            <option key={s} value={s}>{s}</option>
+            <option key={s} value={s}>{verificationLabel(s)}</option>
           ))}
         </Select>
         <span className="ml-auto text-sm text-neutral-500">{totalItems.toLocaleString()} contacts{loading ? ' · loading…' : ''}</span>
@@ -134,7 +135,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
                 <TD>{c.phone || '—'}</TD>
                 <TD>
                   <Badge tone={c.source_type === 'club_site' ? 'green' : c.source_type === 'manual' ? 'neutral' : 'blue'}>
-                    {c.source_type === 'club_site' ? 'club site' : c.source_type || 'directory'}
+                    {sourceTypeLabel(c.source_type || 'directory')}
                   </Badge>
                 </TD>
                 <TD className="max-w-[180px] truncate">
@@ -146,7 +147,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
                 </TD>
                 <TD>
                   <Badge tone={c.verification_status === 'verified' ? 'green' : 'neutral'}>
-                    {c.verification_status || 'unverified'}
+                    {verificationLabel(c.verification_status || 'unverified')}
                   </Badge>
                 </TD>
               </TR>
@@ -177,9 +178,9 @@ function ContactDetailDialog({ contact, onClose }: { contact: Contact | null; on
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base font-semibold text-neutral-900">{contact.email}</h2>
             <Badge tone={contact.verification_status === 'verified' ? 'green' : 'neutral'}>
-              {contact.verification_status || 'unverified'}
+              {verificationLabel(contact.verification_status || 'unverified')}
             </Badge>
-            {contact.quality && <Badge tone="blue">quality {contact.quality}</Badge>}
+            {contact.quality && <Badge tone="blue">Quality {contact.quality}</Badge>}
           </div>
         )
       }
@@ -207,9 +208,9 @@ function ContactDetailDialog({ contact, onClose }: { contact: Contact | null; on
           <section>
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">Provenance</h3>
             <dl className="grid grid-cols-2 gap-x-8 gap-y-3">
-              <DialogField label="Source type" value={contact.source_type} />
+              <DialogField label="Source type" value={sourceTypeLabel(contact.source_type)} />
               <DialogField label="Source URL" value={contact.source_url} link />
-              <DialogField label="Verification" value={contact.verification_status} />
+              <DialogField label="Verification" value={verificationLabel(contact.verification_status)} />
               <DialogField label="Verified at" value={contact.verified_at} />
             </dl>
             {contact.notes && (

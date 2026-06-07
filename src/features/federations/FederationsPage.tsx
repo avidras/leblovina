@@ -4,6 +4,7 @@ import { usePagedCollection } from '@/hooks/usePagedCollection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useUrlState } from '@/hooks/useUrlState'
 import { useClubCountsByFederation } from '@/hooks/useClubCounts'
+import { statusLabel, extractionMethodLabel } from '@/lib/labels'
 import { triggerDiscoverClubs, triggerBatchProcess, triggerExtractFederation, type TriggerResult } from '@/lib/n8n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -133,7 +134,7 @@ export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string
         <Select value={status} onChange={(e) => { setStatus(e.target.value); resetPage() }}>
           <option value="">All statuses</option>
           {FEDERATION_STATUSES.map((s) => (
-            <option key={s} value={s}>{s}</option>
+            <option key={s} value={s}>{statusLabel(s)}</option>
           ))}
         </Select>
         <span className="ml-auto text-sm text-neutral-500">{totalItems.toLocaleString()} federations{loading ? ' · loading…' : ''}</span>
@@ -208,7 +209,7 @@ function FederationRow({
           <Badge tone="blue" className="mt-1">{fed.confederation || '—'}</Badge>
         </TD>
         <TD><CountryLabel country={fed.country} /></TD>
-        <TD>{fed.status ? <Badge tone={statusTone(fed.status)}>{fed.status}</Badge> : '—'}</TD>
+        <TD>{fed.status ? <Badge tone={statusTone(fed.status)}>{statusLabel(fed.status)}</Badge> : '—'}</TD>
         <TD className="text-right tabular-nums">
           {clubCount > 0 ? (
             <Tooltip side="bottom" content={`View the ${clubCount} discovered club(s) for ${fed.country}.`}>
@@ -273,7 +274,7 @@ function FederationDetailDialog({
             <span className="font-mono text-xs text-neutral-500">{fed.fivb_code}</span>
             <h2 className="text-base font-semibold text-neutral-900">{fed.name}</h2>
             <Badge tone="blue">{fed.confederation || '—'}</Badge>
-            {fed.status && <Badge tone={statusTone(fed.status)}>{fed.status}</Badge>}
+            {fed.status && <Badge tone={statusTone(fed.status)}>{statusLabel(fed.status)}</Badge>}
           </div>
         )
       }
@@ -297,7 +298,7 @@ function FederationDetailDialog({
             <dl className="grid grid-cols-2 gap-x-8 gap-y-3">
               <DialogField label="Country" value={withFlag(fed.country)} />
               <DialogField label="Website" value={fed.website_url} link />
-              <DialogField label="Extraction method" value={fed.extraction_method} />
+              <DialogField label="Extraction method" value={extractionMethodLabel(fed.extraction_method)} />
               <DialogField label="Last scraped" value={fed.last_scraped} />
             </dl>
           </section>
@@ -327,7 +328,7 @@ function FederationDetailDialog({
                       <li key={i} className="flex flex-wrap items-center gap-2">
                         <a className="break-all text-blue-600 hover:underline" href={d.url} target="_blank" rel="noreferrer">{d.url}</a>
                         {d.region && <Badge>{d.region}</Badge>}
-                        {d.extraction_method && <Badge tone="blue">{d.extraction_method}</Badge>}
+                        {d.extraction_method && <Badge tone="blue">{extractionMethodLabel(d.extraction_method)}</Badge>}
                       </li>
                     ))}
                   </ul>
