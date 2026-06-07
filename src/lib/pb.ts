@@ -60,6 +60,11 @@ export const WEBSITE_STATUSES: WebsiteStatus[] = ['unknown', 'live', 'dead', 'no
 export type WebsiteConfidence = 'unknown' | 'A' | 'B' | 'C'
 export const WEBSITE_CONFIDENCES: WebsiteConfidence[] = ['unknown', 'A', 'B', 'C']
 
+// What KIND of club the resolved site is. volleyball = dedicated; multisport = a
+// multi-sport club with a volleyball section (still a valid lead, target the section).
+export type ClubType = 'unknown' | 'volleyball' | 'multisport'
+export const CLUB_TYPES: ClubType[] = ['unknown', 'volleyball', 'multisport']
+
 // Mirrors the `clubs` collection schema.
 export interface Club {
   id: string
@@ -72,6 +77,7 @@ export interface Club {
   website_source: WebsiteSource | ''
   website_status: 'unknown' | 'live' | 'dead' | 'not_found' | ''
   website_confidence: WebsiteConfidence | ''
+  club_type: ClubType | ''
   source_url: string
   detail_url: string
   source_club_id: string

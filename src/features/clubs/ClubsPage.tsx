@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { type Club, type WebsiteConfidence, WEBSITE_STATUSES, WEBSITE_CONFIDENCES } from '@/lib/pb'
+import { type Club, type WebsiteConfidence, type ClubType, WEBSITE_STATUSES, WEBSITE_CONFIDENCES, CLUB_TYPES } from '@/lib/pb'
 import { useCollection } from '@/hooks/useCollection'
 import { useUrlState, clearUrlParam } from '@/hooks/useUrlState'
 import { useContactCountsByClub } from '@/hooks/useContactCounts'
@@ -27,6 +27,15 @@ function confidenceTone(c: WebsiteConfidence | ''): 'green' | 'blue' | 'amber' |
   }
 }
 
+// volleyball = dedicated (blue); multisport = volleyball section of a multi-sport club (amber cue).
+function clubTypeTone(t: ClubType | ''): 'blue' | 'amber' | 'neutral' {
+  switch (t) {
+    case 'volleyball': return 'blue'
+    case 'multisport': return 'amber'
+    default: return 'neutral'
+  }
+}
+
 export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?: string | null; onOpenContacts?: (clubId: string) => void } = {}) {
   const { items, loading, error } = useCollection<Club>('clubs', 'name')
   const contactCounts = useContactCountsByClub()
@@ -35,6 +44,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
   const [hasSite, setHasSite] = useUrlState('hasSite')
   const [wsFilter, setWsFilter] = useUrlState('ws')
   const [wcFilter, setWcFilter] = useUrlState('wc')
+  const [ctFilter, setCtFilter] = useUrlState('ct')
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'name', dir: 'asc' })
   const [enrichBusy, setEnrichBusy] = useState(false)
   const [enrichMsg, setEnrichMsg] = useState<string | null>(null)
@@ -49,6 +59,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
       if (hasSite === 'no' && c.website_url) return false
       if (wsFilter && (c.website_status || 'unknown') !== wsFilter) return false
       if (wcFilter && (c.website_confidence || 'unknown') !== wcFilter) return false
+      if (ctFilter && (c.club_type || 'unknown') !== ctFilter) return false
       if (needle && !`${c.name} ${c.country} ${c.region} ${c.city}`.toLowerCase().includes(needle)) return false
       return true
     })
@@ -58,7 +69,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
       return (av < bv ? -1 : av > bv ? 1 : 0) * (sort.dir === 'asc' ? 1 : -1)
     })
     return out
-  }, [items, q, country, hasSite, wsFilter, wcFilter, sort])
+  }, [items, q, country, hasSite, wsFilter, wcFilter, ctFilter, sort])
 
   function toggleSort(key: SortKey) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }))
@@ -133,6 +144,12 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
             <option key={c} value={c}>{c === 'unknown' ? 'unchecked' : `conf ${c}`}</option>
           ))}
         </Select>
+        <Select value={ctFilter} onChange={(e) => setCtFilter(e.target.value)} title="Filter by club type (volleyball vs multi-sport club)">
+          <option value="">Any type</option>
+          {CLUB_TYPES.map((t) => (
+            <option key={t} value={t}>{t === 'unknown' ? 'unclassified' : t}</option>
+          ))}
+        </Select>
         <span className="ml-auto text-sm text-neutral-500">{rows.length} / {items.length}{loading ? ' · loading…' : ''}</span>
         <Tooltip
           side="bottom"
@@ -176,6 +193,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
               <TH>Website</TH>
               <TH>Web status</TH>
               <TH>Conf.</TH>
+              <TH>Type</TH>
               <TH>Detail</TH>
               <TH className="text-right">Contacts</TH>
               <TH sortable sorted={sortedOf('status')} onClick={() => toggleSort('status')}>Status</TH>
@@ -204,6 +222,11 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
                 <TD>
                   {c.website_confidence && c.website_confidence !== 'unknown'
                     ? <Badge tone={confidenceTone(c.website_confidence)}>{c.website_confidence}</Badge>
+                    : <span className="text-neutral-400">—</span>}
+                </TD>
+                <TD>
+                  {c.club_type && c.club_type !== 'unknown'
+                    ? <Badge tone={clubTypeTone(c.club_type)}>{c.club_type === 'multisport' ? 'multi' : 'VB'}</Badge>
                     : <span className="text-neutral-400">—</span>}
                 </TD>
                 <TD>

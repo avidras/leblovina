@@ -153,6 +153,7 @@ the cost to gate.
 | website_source   | select   | `official_list / serper / manual / none` (provenance of the URL) |
 | website_status   | select   | `unknown / live / dead / not_found` (Stage 3 validate+resolve outcome) |
 | website_confidence | select | `unknown / A / B / C` — post-resolve "belongs to club?" check (serper URLs only). See [`club-website-belongs-check.md`](./club-website-belongs-check.md) |
+| club_type        | select   | `unknown / volleyball / multisport` — club-type tag from the post-resolve check (multisport = VB section of a multi-sport club, still a valid lead). See [`club-website-belongs-check.md`](./club-website-belongs-check.md) |
 | source_url       | url      | the directory page this club was scraped from (provenance) |
 | source_club_id   | text     | source's own id/code if any (Italy codice, PB id, …) |
 | dedup_key        | text     | **required, unique** — see decision 4 |

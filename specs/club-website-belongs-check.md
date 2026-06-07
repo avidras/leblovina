@@ -46,6 +46,14 @@ memory — Tier-0 content checks are **$0 extra** (no new request).
 4. **Only `website_source = serper` is checked.** `official_list` / `manual` are accepted as
    `website_confidence = A` (trusted by provenance) without running the check; `none` has no
    URL to check.
+5. **Club-type axis (volleyball vs general sports club).** The same pass also classifies the
+   resolved site as `volleyball` (dedicated club), `multisport` (volleyball is one section of a
+   multi-sport club — *still a valid lead*, just tagged so outreach targets the volleyball
+   section), or `unknown`. Stored as a new `clubs.club_type`. Independently, **a serper-resolved
+   site with no volleyball signal at all** is a likely false positive (e.g. a same-named football
+   club or a town sports portal) → it feeds the confidence axis as a negative signal (→ `C`),
+   but we do **not** assert a `non_volleyball` tag (the homepage may simply bury volleyball on a
+   subpage — `club_type` stays `unknown`). Multi-sport clubs are kept, never rejected.
 
 ## Confidence model (new field)
 
@@ -61,6 +69,15 @@ Add `clubs.website_confidence` (select): `unknown | A | B | C`.
 Grade `C` is the human-triage bucket. We do **not** add a new `website_status` value — status
 stays `unknown|live|dead|not_found` (about reachability); confidence is the orthogonal
 "belongs to club" axis. A `C` club keeps `website_status = live` and its URL.
+
+### Club-type tag (new field)
+
+Add `clubs.club_type` (select): `unknown | volleyball | multisport`. A third axis, orthogonal
+to both status (reachability) and confidence (belongs). Default `unknown`; only set on
+serper-checked clubs (or later by other sources). `multisport` is **not** a downgrade — it is a
+kept lead, tagged so Phase-3/outreach can target the volleyball section's contact and so quality
+scoring (domain rule #7, club fit) can weight it. Only "no volleyball signal" affects confidence
+(→ `C`), never `club_type` directly.
 
 > Open: whether `C` also flips club `status` to `needs_review`. Leaning **no** — keep
 > `status` for Phase-3 contact state; filter the Clubs page on `website_confidence = C`
@@ -91,6 +108,17 @@ lowercased/diacritic-stripped slice of visible text (cap length). Then score:
     (count anchors; high count + generic title ⇒ a list, not the club's own site).
   - **Parked/for-sale** — body matches `/(domain (is )?for sale|buy this domain|parked|
     this domain may be for sale|godaddy|sedo)/i`.
+  - **No volleyball signal** — none of the multilingual volleyball terms appear anywhere on the
+    page (`volleyball|volley|voleibol|voleibol|voleyball|pallavolo|siatków|odbojk|röplabda|
+    tinklin|odbojka|волейбол|воле|hava topu|lentopallo|volleybol|sulæk; …`, Unicode/diacritic-
+    folded). A volleyball club's own homepage should mention the sport; absence on a serper-
+    resolved site is a strong wrong-org indicator ⇒ `C`.
+- **Volleyball-term scan (drives `club_type`, not a fail by itself):** detect volleyball terms
+  (above) and multi-sport markers (`abteilung|sektion|sezione|polisportiva|polideportivo|
+  section|seksjon|multisport|department|sportverein` + several distinct sport names). Heuristic:
+  volleyball term in domain/title/`h1` and few other sports ⇒ `volleyball`; volleyball present
+  but alongside multi-sport markers / many sports ⇒ `multisport`; otherwise leave for the LLM
+  (ambiguous) or `unknown`.
 
 **Tier-0 verdict:**
 - **Strong pass** → title/og/h1 name-token hit **and** (geo corroboration **or** domain-slug
@@ -106,34 +134,45 @@ extracted `{title, og_site_name, h1, text_excerpt(~1–2k chars)}` of the **fetc
 (not snippets):
 
 > "Is this web page the official site of THIS specific club (same club, same city/country —
-> not a namesake, not a league/results page, not a directory)? Return JSON
-> `{belongs: 'yes'|'no'|'unsure', confidence: 0..1, reason}`."
+> not a namesake, not a league/results page, not a directory)? Also classify the site as a
+> dedicated volleyball club, a multi-sport club with a volleyball section, or neither. Return
+> JSON `{belongs: 'yes'|'no'|'unsure', club_type: 'volleyball'|'multisport'|'unknown',
+> confidence: 0..1, reason}`."
 
-- `yes` ⇒ `website_confidence = B` (accepted, probable).
-- `no` / `unsure` ⇒ `website_confidence = C` (review).
+- `belongs=yes` ⇒ `website_confidence = B` (accepted, probable).
+- `belongs=no`/`unsure` ⇒ `website_confidence = C` (review).
+- `club_type` from the LLM is written when Tier 0 couldn't decide it (the LLM may also return
+  `unknown` if it is neither a volleyball nor a recognizable multi-sport club — that's a
+  belongs-suspect signal too).
 
 Cost ceiling: at most **one** extra Haiku call per resolved-by-serper club, and only for the
-ambiguous slice — most clubs resolve at Tier 0 for $0.
+ambiguous slice — most clubs resolve at Tier 0 for $0. The classification rides the **same**
+call, so `club_type` adds no extra cost.
 
-## Where it slots in `enrich-club.json`
+## Where it slots in `enrich-club.json` (as implemented)
 
-All changes are inside the **Finalize** Code node (id `fin`), which already has `res.body`
-for the chosen candidate, plus a conditional Haiku branch:
+The original single **Finalize** node was split so the LLM can see the fetched page. The tail is:
 
-- After `chosen` is confirmed live, run **Tier 0** on the captured body. Set
-  `website_confidence` and decide pass/fail/ambiguous.
-- For **ambiguous**, call Haiku (route through a Pick-site-style agent node, or an inline
-  `httpRequest` to the Anthropic API using the existing credential) and map the verdict.
-- Extend the final `patch({...})` to include `website_confidence` alongside
-  `website_url/website_source/website_status`.
-- The non-serper / already-live fast path (`!v.needsResolve`) sets `website_confidence = A`
-  for `official_list`/`manual`, leaves `unknown` for auto-sourced live-but-unchecked.
-- Capture the candidate GET's body once (it's already fetched) — do **not** add a second
-  request.
+```
+Pick site → Resolve site → Ambiguous? ─true→ Belongs check (Haiku) → Patch → Respond
+                                       └false─────────────────────────→ Patch
+```
 
-Keep `n8n/enrich-club.json` (the committed export) and the **deployed** workflow in sync via
-the n8n public API (per CLAUDE.md): edit the JSON, `PUT` the live workflow, trigger the
-webhook to confirm.
+- **Resolve site** (Code) — resolves the URL (or keeps the live one on recheck), fetches the
+  candidate body **once**, runs **Tier 0** (name/geo/domain + parked/directory + volleyball-term
+  scan), and emits `{chosen, source, status, confidence, club_type, verdict, page, …}`. Strong
+  pass ⇒ `confidence A`; hard fail ⇒ `C`; else `verdict='ambiguous'`. Sets `club_type` when the
+  term scan is conclusive.
+- **Ambiguous?** (IF) — routes `verdict==='ambiguous'` to the LLM; everything else straight to Patch.
+- **Belongs check** (HTTP → Anthropic Messages, `predefinedCredentialType: anthropicApi`) — one
+  Haiku call returning `{belongs, club_type, confidence, reason}`. `onError: continueRegularOutput`.
+- **Patch** (Code) — maps the LLM verdict (yes⇒B, no/unsure⇒C), then PATCHes `website_url,
+  website_source, website_status, website_confidence, club_type` on the club.
+
+The non-serper / already-live fast path (`!v.needsResolve`) sets `website_confidence = A` for
+`official_list`/`manual`, leaves `unknown` otherwise. Keep `n8n/enrich-club.json` (the committed
+export) and the **deployed** workflow in sync via the n8n public API (per CLAUDE.md): edit the
+JSON, `PUT` the live workflow, trigger the webhook to confirm.
 
 ## Backfill (one-off)
 
@@ -144,21 +183,23 @@ if live, run Tier 0/1 → patch `website_confidence`; only resolve if actually d
 reuses the existing batched, gated, re-runnable trigger — no new spend path. Log counts of
 A/B/C so the bad-URL backlog is visible (no silent truncation).
 
-## Migration
+## Migrations
 
-New migration `pocketbase/pb_migrations/<ts>_add_website_confidence.js` — **idempotent**
-(guard with `if (c.fields.getByName('website_confidence')) return;` per the repo's
-crash-loop rule): add `website_confidence` select (`unknown | A | B | C`, default `unknown`)
-to `clubs`. Optional non-unique index for UI filtering.
+- `1780655100_clubs_website_confidence.js` — `website_confidence` select
+  (`unknown | A | B | C`), idempotent-guarded. **Shipped.**
+- `<ts>_clubs_club_type.js` — `club_type` select (`unknown | volleyball | multisport`, default
+  `unknown`), same idempotent guard.
 
 Sync: update `CLAUDE.md` (`clubs` table) and `club-discovery.md` (`clubs` collection table +
-Stage 3) to document `website_confidence` and the belongs-check.
+Stage 3) to document both `website_confidence` and `club_type`.
 
 ## UI (small)
 
-- Clubs page: a **`website_confidence` filter** (esp. `C`) and a column/badge (A/B/C).
+- Clubs page: a **`website_confidence` filter** (esp. `C`) + A/B/C badge, and a **`club_type`
+  filter** + badge (volleyball / multisport).
 - The `C` set is the triage queue: a human opens the club, eyeballs the URL, and either
-  confirms (bump to A/B manually) or clears/edits it.
+  confirms (bump to A/B manually) or clears/edits it. `multisport` rows are a cue that the
+  useful contact is the volleyball section, not the general club office.
 
 ## Out of scope
 
@@ -170,10 +211,17 @@ Stage 3) to document `website_confidence` and the belongs-check.
 
 ## Build order
 
-1. Migration: `clubs.website_confidence` (idempotent) + sync CLAUDE.md & club-discovery.md.
-2. Finalize node: Tier-0 content checks on the captured body; set confidence; wire ambiguous
-   → Haiku; extend the PATCH. `PUT` the live workflow; verify via webhook on a few known
-   good/bad serper clubs.
-3. Backfill: batch the `website_source=serper` filter with `recheck=true`; review A/B/C
-   counts.
-4. UI: confidence filter + badge; `C` triage.
+**Round 1 — belongs-check (shipped):**
+1. Migration `clubs.website_confidence` + sync docs. ✓
+2. Workflow split `Resolve site → Ambiguous? → Belongs check → Patch`; Tier-0 + Haiku tiebreak;
+   `PUT` live + smoke-test. ✓
+3. Backfill `website_source=serper` with `recheck=true`; review A/B/C counts. ✓
+4. UI confidence filter + badge + "Re-check confidence" button. ✓
+
+**Round 2 — club-type axis (this expansion):**
+5. Migration `clubs.club_type` (idempotent) + sync docs.
+6. Resolve site: add the volleyball-term scan (no-volleyball ⇒ `C`; conclusive ⇒ `club_type`).
+   Belongs check: extend the prompt/return to include `club_type`. Patch: write `club_type`.
+   `PUT` live + smoke-test.
+7. Re-run the `recheck=true` backfill (idempotent) to populate `club_type` + reconfirm confidence.
+8. UI: `club_type` filter + badge.

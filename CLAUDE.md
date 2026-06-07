@@ -171,6 +171,7 @@ See `specs/club-discovery.md`. Discovered via an agentic, search-led, tiered pip
 | website_source | select   | official_list / serper / manual / none — URL provenance |
 | website_status | select   | unknown / live / dead / not_found — Stage 3 validate+resolve outcome |
 | website_confidence | select | unknown / A / B / C — post-resolve "does this site belong to the club?" check (serper URLs only; A=trusted, B=probable, C=review). Orthogonal to website_status. See `specs/club-website-belongs-check.md` |
+| club_type      | select   | unknown / volleyball / multisport — set by the post-resolve check. `multisport` = multi-sport club with a volleyball section (still a valid lead; target the section). No-volleyball signal feeds confidence (→C), not this tag. See `specs/club-website-belongs-check.md` |
 | source_url     | url      | the directory page the club came from |
 | detail_url     | url      | the catalog's per-club detail page (richer contact data for Phase 3), if any. The html extractor backfills it from each club's listing link (LLM + deterministic link-map fallback) |
 | source_club_id | text     | source's own id/code if any |
