@@ -52,6 +52,17 @@ remaining Phase-5 step.)
    designer's / hosting / CMS-boilerplate emails, social-widget addresses, `example@`,
    `sentry@`, `wordpress@`, and **third-party domains**. **Prefer emails on the club's own
    domain** (or a common free provider tied to the club). Cap obviously-spammy bulk lists.
+   - **Agency / web-dev / media noise (two layers).** Footer credits ("realizacja",
+     "wykonanie", "projekt i wykonanie strony", "created by", "powered by", "site by",
+     "webdesign") attach the *site builder's* email, which is never a club contact — the
+     extractor prompt is told to drop these even when a person is named beside them, and to
+     drop a named person's email when it sits on an outside company/agency domain rather than
+     the club's own. Backed by a **deterministic filter** in Write: a curated noise-domain
+     denylist (e.g. `otagomedia.pl`, `iproart.com`) + a conservative agency-keyword regex on
+     the email domain (`agencja|interaktyw|interactive|webstudio|webdesign|webdev|…`). The
+     denylist is easy to extend as new offenders surface. Keep keywords specific so a club's
+     own `marketing@`/`media@` on its own domain is never dropped. Validated on the POL sample
+     (round 7): caught `otagomedia.pl`, `iproart.com`.
 5. **Write incrementally, per club** (the 21-min all-or-nothing harvest lesson): upsert each
    club's contacts as found (find-or-create by email; `source_type='club_site'`,
    `source_url`=the page). Set club `contacts_found` / `no_contacts`; stamp `last_scraped`.
@@ -88,10 +99,16 @@ rediscovering everything:
 - **A — seed candidates from `contact_url` + `section_url`.** The resolver's best contact page is
   used as a guaranteed candidate (ahead of the markdown/HTML keyword rediscovery), so the page
   budget is spent on the best pages even when the homepage render misses the link.
-- **B — confidence gate.** The worker **skips `website_confidence='C'` clubs unless `force`**
-  (C is where wrong-club/aggregator URLs land — scraping them pollutes contacts). The UI scrape
-  action defaults its filter to **A/B** as the first line of defence; the worker guard is the
-  backstop.
+- **B — confidence gate (C is ALWAYS excluded).** The worker **never page-scrapes a
+  `website_confidence='C'` club's website — not even with `force`** (`useSite = home &&
+  conf!=='C'`). C is where wrong-club/aggregator URLs land — the POL sample (round 7) confirmed
+  ~50% of C sites are the wrong entity (town-hall/school/news inboxes like `sekretariat@czosnow.pl`,
+  `info@chojna.pl`). Three layers enforce this: the **driver's** default full-run filter excludes
+  C (`website_status='live' && website_confidence!='C'`), the **UI** scrape action filters to A/B,
+  and the **worker** guard is the absolute backstop. `force` now only re-scrapes already-done A/B
+  clubs; it can no longer override the C exclusion. (A C-confidence club with a `detail_url` is
+  still scrapable via that federation page — the exclusion is about its dubious *website*, not
+  federation-provenance pages.)
 - **C — `website_emails` fallback.** Any deterministically-harvested homepage email not captured
   by the LLM is still written (email-only contact), so a missed LLM extraction never loses real
   emails / falsely marks `no_contacts`. (Domain rule #1 safe — extracted, not guessed.)

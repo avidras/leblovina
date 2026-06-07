@@ -68,7 +68,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const body=($('Webhook').first().json.body)||{};\nconst limit=body.limit?Number(body.limit):0;\nlet items=[];\nif (Array.isArray(body.ids) && body.ids.length){\n  // explicit id list from the UI (current Clubs filter) — scrape exactly these\n  items = body.ids.filter(Boolean).map(id=>({id}));\n} else {\n  // no ids: all clubs with a live resolved website; optional onlyNew skips ones already scraped\n  const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\n  const token=$('PB Auth').first().json.token; const pbH={Authorization:token};\n  let flt='website_status=\"live\"';\n  if (body.onlyNew) flt+=' && status!=\"contacts_found\" && status!=\"no_contacts\"';\n  let page=1;\n  while(true){ const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:flt,perPage:200,page,fields:'id'},headers:pbH,json:true}); items=items.concat(r.items||[]); if(page>=(r.totalPages||1))break; page++; }\n}\nif(limit>0) items=items.slice(0,limit);\nif(!items.length) return [{json:{__skip:true}}];\nreturn items.map(c=>({json:{id:c.id}}));\n"
+        "jsCode": "const body=($('Webhook').first().json.body)||{};\nconst limit=body.limit?Number(body.limit):0;\nlet items=[];\nif (Array.isArray(body.ids) && body.ids.length){\n  // explicit id list from the UI (current Clubs filter) — scrape exactly these\n  items = body.ids.filter(Boolean).map(id=>({id}));\n} else {\n  // no ids: all clubs with a live resolved website; optional onlyNew skips ones already scraped\n  const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\n  const token=$('PB Auth').first().json.token; const pbH={Authorization:token};\n  // Full/batch scrapes ALWAYS exclude C-confidence clubs (wrong-club/aggregator bucket),\n  // and skip clubs already SITE-scraped. 'already scraped' = scrape_note set (the site-scraper's\n  // own per-club marker) — NOT status, because status='contacts_found'/'no_contacts' is also set\n  // by directory extraction (a club can have a directory email yet never have been site-scraped).\n  let flt='website_status=\"live\" && website_confidence!=\"C\" && scrape_note=\"\"';\n  let page=1;\n  while(true){ const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:flt,perPage:200,page,fields:'id'},headers:pbH,json:true}); items=items.concat(r.items||[]); if(page>=(r.totalPages||1))break; page++; }\n}\nif(limit>0) items=items.slice(0,limit);\nif(!items.length) return [{json:{__skip:true}}];\nreturn items.map(c=>({json:{id:c.id}}));\n"
       },
       "id": "list",
       "name": "List clubs",
@@ -96,7 +96,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://n8n-2.biceps.digital/webhook/site-scrape-club",
+        "url": "https://n8n-2.biceps.digital/webhook/site-scrape-club-v2",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ id: $json.id, force: (($('Webhook').first().json.body)||{}).force === true }) }}",

@@ -95,6 +95,25 @@ export interface Club {
   updated: string
 }
 
+// Mirrors the `scrape_pages` collection — per-page audit trail of a club site-scrape
+// (metadata + cleaned text + raw HTML/markdown file). See specs/club-scrape-page-capture.md.
+export interface ScrapePage {
+  id: string
+  club: string
+  url: string
+  role: 'homepage' | 'candidate' | 'detail' | ''
+  method: 'http' | 'firecrawl' | ''
+  http_status: number
+  bytes: number
+  used: boolean
+  emails_found: number
+  text: string
+  raw: string // filename of the attached raw HTML/markdown (empty if upload absent)
+  run_at: string
+  created: string
+  updated: string
+}
+
 export type VerificationStatus =
   | 'unverified' | 'mx_only' | 'verified' | 'catch_all' | 'undeliverable' | 'unknown'
 export const VERIFICATION_STATUSES: VerificationStatus[] = [

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { pb, type Club, type WebsiteConfidence, type ClubType, WEBSITE_STATUSES, WEBSITE_CONFIDENCES, CLUB_TYPES } from '@/lib/pb'
+import { pb, type Club, type ScrapePage, type WebsiteConfidence, type ClubType, WEBSITE_STATUSES, WEBSITE_CONFIDENCES, CLUB_TYPES } from '@/lib/pb'
 import { statusLabel, websiteStatusLabel, websiteSourceLabel, confidenceLabel, confidenceHelp, clubTypeLabel } from '@/lib/labels'
 import { usePagedCollection } from '@/hooks/usePagedCollection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
@@ -103,12 +103,14 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
   const harvestFilter = useMemo(() => andFilter(filter, "website_status = 'live'"), [filter])
   // Site-scrape targets trusted sites (A/B; C is the wrong-club/aggregator bucket) PLUS any club
   // with a federation detail page (federation-provenance; contacts even when there's no website).
-  // Rerun-idempotent: skips clubs already scraped (contacts_found/no_contacts); retries 'error'
-  // and never-scraped. The per-club "Full scrape" button (force) overrides this.
+  // Rerun-idempotent: skips clubs already SITE-scraped; the per-club "Full scrape" (force) re-runs.
+  // "Not yet site-scraped" = scrape_note empty (the site-scraper's own marker). NOT status:
+  // status='contacts_found'/'no_contacts' is also set by directory extraction, so a club with a
+  // directory email but no page-scrape must still be a target. See specs/club-site-contact-scraper.md.
   const scrapeFilter = useMemo(() => andFilter(
     filter,
     "(website_status = 'live' && (website_confidence = 'A' || website_confidence = 'B')) || detail_url != ''",
-    "status != 'contacts_found' && status != 'no_contacts'",
+    "scrape_note = ''",
   ), [filter])
   const [unresolvedCount, setUnresolvedCount] = useState(0)
   const [recheckCount, setRecheckCount] = useState(0)
@@ -438,6 +440,28 @@ function ClubDetailDialog({
   onClose: () => void
   onOpenContacts?: (clubId: string) => void
 }) {
+  const [pages, setPages] = useState<ScrapePage[]>([])
+  const [fileToken, setFileToken] = useState('')
+  useEffect(() => {
+    if (!club) { setPages([]); return }
+    let alive = true
+    ;(async () => {
+      try {
+        const list = await pb.collection('scrape_pages').getFullList<ScrapePage>({
+          filter: pb.filter('club = {:c}', { c: club.id }),
+          sort: 'role,created',
+        })
+        if (alive) setPages(list)
+        // short-lived token to fetch the protected raw files
+        try { const t = await pb.files.getToken(); if (alive) setFileToken(t) } catch { /* non-fatal */ }
+      } catch { if (alive) setPages([]) }
+    })()
+    return () => { alive = false }
+  }, [club])
+
+  const rawUrl = (p: ScrapePage) =>
+    p.raw ? pb.files.getURL(p as unknown as Parameters<typeof pb.files.getURL>[0], p.raw, fileToken ? { token: fileToken } : undefined) : ''
+
   return (
     <Dialog
       open={club != null}
@@ -519,6 +543,29 @@ function ClubDetailDialog({
               </div>
             )}
           </section>
+
+          {pages.length > 0 && (
+            <section>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                Scraped pages ({pages.length})
+              </h3>
+              <div className="space-y-1.5">
+                {pages.map((p) => (
+                  <div key={p.id} className="flex items-center gap-2 text-xs">
+                    <Badge tone={p.role === 'homepage' ? 'blue' : p.role === 'detail' ? 'amber' : 'neutral'}>{p.role || 'page'}</Badge>
+                    <span className="text-neutral-400">{p.method}{p.http_status ? ` ${p.http_status}` : ''}</span>
+                    <a className="min-w-0 flex-1 truncate text-blue-600 hover:underline" href={p.url} target="_blank" rel="noreferrer" title={p.url}>
+                      {p.url.replace(/^https?:\/\//, '')}
+                    </a>
+                    <span className="tabular-nums text-neutral-500" title="emails found on this page">{p.emails_found} ✉</span>
+                    {p.raw
+                      ? <a className="text-blue-600 hover:underline" href={rawUrl(p)} target="_blank" rel="noreferrer">raw</a>
+                      : <span className="text-neutral-300">raw</span>}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       )}
     </Dialog>
