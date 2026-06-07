@@ -3,6 +3,7 @@ import { pb } from '@/lib/pb'
 import { Login } from '@/components/Login'
 import { Button } from '@/components/ui/button'
 import { Tooltip } from '@/components/ui/tooltip'
+import { useCollectionTotal } from '@/hooks/useCollectionTotal'
 import { FederationsPage } from '@/features/federations/FederationsPage'
 import { ClubsPage } from '@/features/clubs/ClubsPage'
 import { ContactsPage } from '@/features/contacts/ContactsPage'
@@ -70,11 +71,7 @@ export default function App() {
       <header className="border-b border-neutral-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center gap-4 px-6 py-3">
           <span className="font-semibold">Leblovina</span>
-          <nav className="flex gap-1">
-            <NavButton active={view === 'federations'} onClick={() => navigate('federations')}>Federations</NavButton>
-            <NavButton active={view === 'clubs'} onClick={() => navigate('clubs')}>Clubs</NavButton>
-            <NavButton active={view === 'contacts'} onClick={() => navigate('contacts')}>Contacts</NavButton>
-          </nav>
+          <MainNav view={view} navigate={navigate} />
           <div className="ml-auto flex items-center gap-3">
             <span className="text-xs text-neutral-500">{pb.authStore.record?.email}</span>
             <Tooltip side="bottom" content="Sign out">
@@ -100,16 +97,47 @@ export default function App() {
   )
 }
 
-function NavButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+const VIEW_LABELS: Record<View, string> = { federations: 'Federations', clubs: 'Clubs', contacts: 'Contacts' }
+
+// Nav with a live total chip per view. The hooks live here (not at the top level)
+// so they only run once the user is authed and this subtree mounts.
+function MainNav({ view, navigate }: { view: View; navigate: (view: View) => void }) {
+  const totals: Record<View, number | null> = {
+    federations: useCollectionTotal('federations'),
+    clubs: useCollectionTotal('clubs'),
+    contacts: useCollectionTotal('contacts'),
+  }
+  return (
+    <nav className="flex gap-1">
+      {VIEWS.map((v) => (
+        <NavButton key={v} active={view === v} count={totals[v]} onClick={() => navigate(v)}>
+          {VIEW_LABELS[v]}
+        </NavButton>
+      ))}
+    </nav>
+  )
+}
+
+function NavButton({ active, onClick, count, children }: { active: boolean; onClick: () => void; count?: number | null; children: React.ReactNode }) {
   return (
     <button
       onClick={onClick}
       className={
-        'rounded-md px-3 py-1.5 text-sm font-medium ' +
+        'inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium ' +
         (active ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-100')
       }
     >
       {children}
+      {count != null && (
+        <span
+          className={
+            'ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums ' +
+            (active ? 'bg-white/20 text-white' : 'bg-neutral-200 text-neutral-600')
+          }
+        >
+          {count.toLocaleString()}
+        </span>
+      )}
     </button>
   )
 }
