@@ -103,7 +103,13 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
   const harvestFilter = useMemo(() => andFilter(filter, "website_status = 'live'"), [filter])
   // Site-scrape targets trusted sites (A/B; C is the wrong-club/aggregator bucket) PLUS any club
   // with a federation detail page (federation-provenance; contacts even when there's no website).
-  const scrapeFilter = useMemo(() => andFilter(filter, "(website_status = 'live' && (website_confidence = 'A' || website_confidence = 'B')) || detail_url != ''"), [filter])
+  // Rerun-idempotent: skips clubs already scraped (contacts_found/no_contacts); retries 'error'
+  // and never-scraped. The per-club "Full scrape" button (force) overrides this.
+  const scrapeFilter = useMemo(() => andFilter(
+    filter,
+    "(website_status = 'live' && (website_confidence = 'A' || website_confidence = 'B')) || detail_url != ''",
+    "status != 'contacts_found' && status != 'no_contacts'",
+  ), [filter])
   const [unresolvedCount, setUnresolvedCount] = useState(0)
   const [recheckCount, setRecheckCount] = useState(0)
   const [harvestCount, setHarvestCount] = useState(0)
@@ -306,7 +312,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
               key: 'scrape',
               label: 'Full site scrape',
               count: scrapeCount,
-              description: 'Crawls each trusted (A/B) club’s website + any club’s federation detail page to find contacts. Slower and uses more credits. C-only sites excluded.',
+              description: 'Crawls each trusted (A/B) club’s website + any club’s federation detail page to find contacts. Slower and uses more credits. C-only sites excluded; already-scraped clubs skipped (failures retried).',
               disabled: enrichBusy || scrapeCount === 0,
               onSelect: scrapeSites,
             },
