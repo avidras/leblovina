@@ -24,6 +24,15 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > actions), CYP/MON(Apify), SUI/LAT/BIH/WAL(dirs found, extraction 0 — per-case), FRA/ISL/SVK/
 > SWE/UKR/GRL/NIR(mixed). Plus: wire federated/site-scraper into routing; fix the noisy
 > `club_count` heuristic; Apify anti-bot tier (Phase 4).
+>
+> **Phase 3 round 2 (2026-06-07):** Federated extractor validated + **auto-routed** (>2 regional
+> dirs → `extract-clubs-federated`): GER 93→163, ESP 41→135, BIH 0→8. **Nevobo open API
+> extractor** (`extract-clubs-nevobo` 42Ur1JEWgaQkDZ0a): **NED 0→1,739 clubs + ~1,600 contacts**
+> (email/phone) in ~100s, deterministic. DB now ~6.5k clubs / ~3.2k contacts.
+> **Still open:** SUI (Swiss Volley = SportManager portal `api.volleyball.ch` HTML + an
+> apiary-documented API needing a key — deferred); NOR (JS-tab actions); FRA (PHP search form);
+> CYP/MON (Apify); deeper federated crawl for *full* GER/ESP coverage; auto-route Nevobo/
+> site-scraper; fix club_count heuristic.
 
 _Last updated: 2026-06-06._
 
