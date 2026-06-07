@@ -72,7 +72,75 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > extractor (fast, clean, captures emails). Only fall back to Firecrawl-render/Apify when there's
 > no reachable backend (NOR may be this case).
 
-_Last updated: 2026-06-07._
+> **Phase 3 round 4 (2026-06-07, recon only — NO data/extractor/workflow changes this session):**
+> Validated all `.env` creds (PB, n8n, Serper, Firecrawl, Apify, Anthropic — all HTTP 200).
+> Re-derived the true zero-club set by **counting actual `clubs` records** (the `federations.club_count`
+> field is STALE — don't trust it; count via `clubs?filter=federation='<id>'` totalItems).
+> **10 CEV federations still at 0 clubs:** ALB, CYP, GIB, LAT, MON, NOR, SVK, SWE, SUI, UKR.
+> Key reality check: the discovery `notes` for these **overstated** "static club table" — most are NOT
+> clean registries. Verified per-fed:
+> - **SUI (biggest prize, ~hundreds of clubs):** club search at volleyball.ch/de/verband/services/verein-suchen
+>   is **Algolia-backed**. Index name confirmed **`clubs-0`** (sort replicas `_zip_asc`, `_caption_asc`).
+>   The REST API `https://api.volleyball.ch/indoor/clubs` exists but returns `{"errors":[{"message":"Valid
+>   API-Key required"}]}`. Algolia appId + search key are **runtime-injected** — NOT in the Next.js static
+>   chunks (`/_next/static/chunks/94-*.js` holds the InstantSearch wiring + `indexName:"clubs-0"`, but
+>   `searchClient` is an imported var with no literal appId/key) and NOT in the Firecrawl-rendered DOM
+>   (page renders no clubs until interaction). **Next:** capture the live Algolia XHR (`{appId}-dsn.algolia.net
+>   /1/indexes/clubs-0/query` + `X-Algolia-API-Key`) via a real browser — Apify Puppeteer/Playwright actor
+>   with request interception, or check the Swiss Volley Apiary (`swissvolley.docs.apiary.io`) for an open
+>   key. Once appId+searchKey known → POST Algolia browse/query, paginate, deterministic. Highest ROI target.
+> - **LAT:** volejbols.lv/komandas is only league-group rosters (team name + coach, ~15 rows, no city/site/
+>   email). Thin; capturable but low value.
+> - **UKR:** fvu.in.ua/uk/taxonomy/term/521 is a thin Drupal **tag** page (6 teasers, 0 mailto) — NOT a club
+>   registry. The discovery "lists_clubs:true" was a hallucination. Need to find a real club page on fvu.in.ua.
+> - **ALB:** fshv.org.al homepage has NO `<table>`/`<tr>` in raw HTML (claim of ~96-club table is suspect);
+>   needs real recon (check menu for Klube page, sitemap, wp-json).
+> - **CYP/MON/SVK/SWE/NOR:** not re-investigated this session beyond prior notes (round 3). SVK=eliterro
+>   `api.volley.eliterro.sk` (path unknown), SWE=Profixio `org=SVBF.SE.SVB` (api.profixio.com didn't resolve
+>   from this network — retry) or RF/IdrottOnline registry, NOR=external register behind volleyball.no JS.
+> - **GIB:** genuinely no website / club directory (social media only) — likely mark resolved-no-source.
+> _Method for next session: do focused per-fed recon (max 2 parallel agents — run resources are limited),
+> find the real deterministic source or declare none, then build a dedicated extractor like Nevobo/FFVB._
+>
+> _Permissions aside: file-based `permissions.defaultMode:bypassPermissions` did NOT stick — the running
+> session re-serializes `.claude/settings.local.json` and strips it. Use Shift+Tab (bypass mode) or
+> `claude --dangerously-skip-permissions` instead._
+
+> **Phase 3 round 5 (2026-06-07):** **SVK cracked — eliterro open API.** `slovakvolley.sk`'s
+> backend `api.volley.eliterro.sk` exposes a **public Swagger** (`/swagger/v1/swagger.json`, 93
+> routes) and an open `GET /clubs?count=1000` (95 clubs) + `GET /clubs/{id}` detail with
+> `address` (city/street/postcode), `contacts` (Web/FB/IG), and **`people[]` with Email + Phone**.
+> Built `extract-clubs-eliterro` (`pq5ObaOqWYMvkJuk` | `/webhook/extract-clubs-eliterro`):
+> Build clubs (list) → splitInBatches(1) → Process club (fetch detail, find-or-create club by
+> `dedup_key='SVK:'+id`, contacts by email) → Finalize. **SVK 0→95 clubs + 90 contacts** (named
+> club-representatives w/ email+phone), 66 w/ website, 94 w/ city — deterministic, ~90s.
+> eliterro is a Slovak platform; likely SVK-only (not seen on other CEV feds).
+> **SWE partial — 0→11 clubs + 11 contacts (clean emails).** `volleyboll.se` runs on SiteVision
+> and routes "find a club" entirely to Profixio (`org=SVBF.SE.SVB`). Profixio's only public surface
+> is `fx/terminliste.php` (tournament invitations) + a Filament/Livewire app (`/app`, no public REST
+> — `/app/api/v1/*` all 404) → **browser-only, and email-less**. The one clean source: the
+> **Stockholm-Gotland district** find-a-club page embeds a JS `clubs=[{name,Link,Instagram,Email}]`
+> array (Leaflet map). Built `extract-clubs-svbf-map` (`Isoaq7s7VfszJcrM` |
+> `/webhook/extract-clubs-svbf-map`): GET page → regex the `clubs=[…]` array → JSON.parse →
+> find-or-create club (`dedup_key='SWE:'+uslug(name)`) + contact by email. Takes `{id,url,region}`
+> so it generalizes to any district that adds such an array (only Stockholm-Gotland has one today;
+> national + other 4 districts route to Profixio). **Full SWE (hundreds of clubs) remains
+> browser-only via Profixio with NO emails — low lead-gen value, deferred.** svenskalag.se "sok"
+> is a text search (9 hits), not a sport directory.
+> **Zero set now 8:** ALB, CYP, GIB, LAT, MON, NOR, SUI, UKR. (SVK done; SWE off-zero, partial.)
+> **SUI blocker confirmed dead-end statically:** Algolia appId+searchKey are runtime-injected —
+> NOT in HTML, NOT in any `/_next/static/chunks/*.js` (only the Sentry DSN `…@sentry.visol.ch` and
+> `indexName:"clubs-0"` are literals; `searchClient` is an imported var, `[appId,apiKey]` read from
+> `l.client` at runtime). Needs a real browser to capture the live `{appId}-dsn.algolia.net` XHR.
+> **Apify browser actors (puppeteer/web-scraper) require one-time console permission approval**
+> (`full-permission-actor-not-approved`) — can't be done from the API/CLI. To unblock SUI: either
+> approve the actor in the Apify console, or paste the Algolia App-ID + Search-API-Key from a
+> browser DevTools Network capture (the `X-Algolia-Application-Id` / `X-Algolia-API-Key` request
+> headers on volleyball.ch's verein-suchen search). **SWE:** Profixio is a Laravel API
+> (`/app/api/v1/...` returns `{"message":"The route … could not be found."}`) — real route still
+> unknown; classic `profixio.com/fx/` is tournament-invitation pages, not a clean registry.
+>
+> _Last updated: 2026-06-07 (round 5 — SVK done)._
 
 ## Where things stand
 
@@ -95,6 +163,10 @@ _Last updated: 2026-06-07._
   - Extract clubs (api)   `w9sLRJIfFfIMWFZG` | `/webhook/extract-clubs`
   - Process federation    `Jja5unwVathVFd1Y` | `/webhook/process-federation` (discover→gate→route)
   - Enrich/Resolve website `jOeufPcBBIWrij7M` | `/webhook/enrich-club`
+  - Extract clubs (eliterro/SVK) `pq5ObaOqWYMvkJuk` | `/webhook/extract-clubs-eliterro`
+  - Extract clubs (SVBF map/SWE) `Isoaq7s7VfszJcrM` | `/webhook/extract-clubs-svbf-map`
+  - Extract clubs (FFVB/FRA) `Vz1NsAbq4JWzwZr8` | `/webhook/extract-clubs-ffvb`
+  - Extract clubs (Nevobo/NED) `42Ur1JEWgaQkDZ0a` | `/webhook/extract-clubs-nevobo`
 - Trigger an extractor: `POST {webhook} {"id":"<fedId>"}` (optionally `"url":"<dir>"` to force one dir).
 - **Exports under `n8n/` are NOT auto-applied** — edit the export AND PUT to the live workflow
   (keep them in sync). Same for the contacts collection (migration committed + created via API).

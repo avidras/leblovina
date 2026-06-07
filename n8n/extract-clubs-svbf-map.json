@@ -1,0 +1,89 @@
+{
+  "name": "Leblovina — Extract clubs (SVBF district map / SWE)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "extract-clubs-svbf-map",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-600, 0],
+      "webhookId": "extract-clubs-svbf-map"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "p", "name": "pbUrl", "value": "https://leblovina.tools.biceps.digital", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-440, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-280, 0],
+      "credentials": {
+        "httpCustomAuth": { "id": "hzdBwrAqrPZjDmME", "name": "PocketBase admin (api)" }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst body=($('Webhook').first().json.body)||{};\nconst fedId=body.id||'aukideiuxdonadd';\nconst region=body.region||'Stockholm/Gotland';\nconst SRC=body.url||'https://www.volleyboll.se/forbundet/distrikt/stockholm-gotlands-vbf/hitta-forening';\nconst isEmail=(e)=>/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(e);\nconst isSocial=(u)=>/facebook|instagram|twitter|x\\.com|tiktok|youtube|linkedin/i.test(u);\nconst normUrl=(u)=>{u=String(u||'').trim();if(!u)return '';if(u.startsWith('//'))u='https:'+u;if(!/^https?:/i.test(u))u='https://'+u;return u;};\nconst uslug=(s)=>String(s||'').toLowerCase().trim().replace(/[^\\p{L}\\p{N}]+/gu,'-').replace(/^-+|-+$/g,'');\nconst now=new Date().toISOString();\nconst findClub=async(k)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:\"(dedup_key='\"+k+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nconst findContact=async(e)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs:{filter:\"(email='\"+e.replace(/'/g,'')+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nlet html='';\ntry{html=await this.helpers.httpRequest({method:'GET',url:SRC,headers:{'User-Agent':'Mozilla/5.0'}});}catch(e){return [{json:{error:'fetch:'+e.message}}];}\nconst m=String(html).match(/clubs\\s*=\\s*(\\[[\\s\\S]*?\\])\\s*;/);\nif(!m){return [{json:{error:'no clubs array'}}];}\nlet arr=[]; try{arr=JSON.parse(m[1]);}catch(e){return [{json:{error:'parse:'+e.message}}];}\nlet created=0,contactsC=0;\nfor(const c of arr){const name=String(c.name||'').trim(); if(!name)continue;\n  let site=normUrl(c.Link||c.link||''); if(isSocial(site))site='';\n  const email=String(c.Email||c.email||'').toLowerCase().trim();\n  const dedup='SWE:'+uslug(name);\n  const base={federation:fedId,name,country:'Sweden',region,dedup_key:dedup,source_url:SRC,last_scraped:now};\n  let clubId=null;\n  try{ try{const rec=await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/clubs/records',headers:pbH,body:Object.assign({},base,{website_url:site,website_source:site?'official_list':'none',status:'new'}),json:true});created++;clubId=rec.id;}\n    catch(e){const ex=await findClub(dedup);if(ex){const p=Object.assign({},base);if(site){p.website_url=site;p.website_source='official_list';}await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/clubs/records/'+ex.id,headers:pbH,body:p,json:true});clubId=ex.id;}else throw e;} }\n  catch(e){continue;}\n  if(email&&isEmail(email)){ try{await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/contacts/records',headers:pbH,body:{club:clubId,email,source_url:SRC,source_type:'directory',verification_status:'unverified'},json:true});contactsC++;}\n    catch(e){try{const ex=await findContact(email);if(ex&&!ex.club)await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/contacts/records/'+ex.id,headers:pbH,body:{club:clubId},json:true});}catch(_){}}\n  }\n}\nreturn [{json:{src:SRC,clubsInArray:arr.length,created,contactsC}}];\n"
+      },
+      "id": "proc",
+      "name": "Process map",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-100, 0],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst fedId=(($('Webhook').first().json.body)||{}).id||'aukideiuxdonadd';\nconst r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:'federation=\"'+fedId+'\"',perPage:1},headers:pbH,json:true});\nconst n=r.totalItems||0;\nawait this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/federations/records/'+fedId,headers:pbH,body:{status:(n>0?'scraped':'needs_review'),club_count:n,last_scraped:new Date().toISOString()},json:true});\nreturn [{json:{ok:true,clubs:n}}];\n"
+      },
+      "id": "fin",
+      "name": "Finalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [120, 0]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "PB Auth", "type": "main", "index": 0 }]] },
+    "PB Auth": { "main": [[{ "node": "Process map", "type": "main", "index": 0 }]] },
+    "Process map": { "main": [[{ "node": "Finalize", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false,
+  "pinData": {},
+  "meta": { "templateId": "leblovina-extract-svbf-map" }
+}

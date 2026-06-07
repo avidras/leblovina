@@ -1,0 +1,117 @@
+{
+  "name": "Leblovina — Extract clubs (eliterro / SVK)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "extract-clubs-eliterro",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-600, 0],
+      "webhookId": "extract-clubs-eliterro"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "p", "name": "pbUrl", "value": "https://leblovina.tools.biceps.digital", "type": "string" },
+            { "id": "a", "name": "apiBase", "value": "https://api.volley.eliterro.sk", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-440, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-280, 0],
+      "credentials": {
+        "httpCustomAuth": { "id": "hzdBwrAqrPZjDmME", "name": "PocketBase admin (api)" }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const API=$('Config').first().json.apiBase;\nconst fedId=(($('Webhook').first().json.body)||{}).id||'k3j6j0ymtct3yd9';\nconst r=await this.helpers.httpRequest({method:'GET',url:API+'/clubs',qs:{count:1000},headers:{'User-Agent':'Mozilla/5.0'},json:true});\nconst list=Array.isArray(r)?r:[];\nreturn list.map(c=>({json:{id:c.id,name:c.name,fedId}}));\n"
+      },
+      "id": "build",
+      "name": "Build clubs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-120, 0]
+    },
+    {
+      "parameters": { "batchSize": 1, "options": {} },
+      "id": "loop",
+      "name": "Loop",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [60, 0]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst API=$('Config').first().json.apiBase;\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst fedId=$json.fedId; const id=$json.id;\nconst SRC='https://slovakvolley.sk/page/adresare';\nconst isEmail=(e)=>/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(e);\nconst isSocial=(u)=>/facebook|instagram|twitter|x\\.com|tiktok|youtube|linkedin/i.test(u);\nconst normUrl=(u)=>{u=String(u||'').trim();if(!u)return '';if(u.startsWith('//'))u='https:'+u;if(!/^https?:/i.test(u))u='https://'+u;return u;};\nconst now=new Date().toISOString();\nconst findClub=async(k)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:\"(dedup_key='\"+k+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nconst findContact=async(e)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs:{filter:\"(email='\"+e.replace(/'/g,'')+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nlet d;\ntry{d=await this.helpers.httpRequest({method:'GET',url:API+'/clubs/'+id,headers:{'User-Agent':'Mozilla/5.0'},json:true});}catch(e){return [{json:{id,error:'fetch:'+e.message}}];}\nconst name=(d.name||$json.name||'').trim(); if(!name) return [{json:{id,skip:'noname'}}];\nconst addr=d.address||{}; const city=(addr.city||'').trim();\nconst ccs=d.contacts||[];\nlet site=''; for(const c of ccs){if(c.type==='Web'){site=normUrl(c.value);break;}} if(isSocial(site))site='';\nconst dedup='SVK:'+id;\nconst base={federation:fedId,name,country:'Slovakia',city,dedup_key:dedup,source_url:SRC,detail_url:API+'/clubs/'+id,source_club_id:String(id),last_scraped:now};\nlet clubId=null;\ntry{ try{const rec=await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/clubs/records',headers:pbH,body:Object.assign({},base,{website_url:site,website_source:site?'official_list':'none',status:'new'}),json:true});clubId=rec.id;}\n  catch(e){const ex=await findClub(dedup);if(ex){const p=Object.assign({},base);if(site){p.website_url=site;p.website_source='official_list';}await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/clubs/records/'+ex.id,headers:pbH,body:p,json:true});clubId=ex.id;}else throw e;} }\ncatch(e){return [{json:{id,error:'club:'+e.message}}];}\nconst people=d.people||[];\nconst cands=[];\nfor(const c of ccs){if(c.type==='Email'){const e=(c.value||'').toLowerCase().trim();if(isEmail(e))cands.push({email:e,name:'',position:'',phone:''});}}\nfor(const p of people){const pc=p.contacts||[];let email='',phone='';for(const c of pc){if(c.type==='Email'&&!email)email=(c.value||'').toLowerCase().trim();if(c.type==='Phone'&&!phone)phone=(c.value||'').trim();}if(email&&isEmail(email)){const nm=[p.firstName,p.lastName].filter(Boolean).join(' ').trim();cands.push({email,name:nm,position:p.type||'',phone});}}\nconst seen={}; let contactsC=0;\nfor(const ct of cands){ if(seen[ct.email])continue; seen[ct.email]=1; try{await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/contacts/records',headers:pbH,body:{club:clubId,email:ct.email,name:ct.name,position:ct.position,phone:ct.phone,source_url:base.detail_url,source_type:'directory',verification_status:'unverified'},json:true});contactsC++;}\n  catch(e){try{const ex=await findContact(ct.email);if(ex&&!ex.club)await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/contacts/records/'+ex.id,headers:pbH,body:{club:clubId},json:true});}catch(_){}}\n}\nreturn [{json:{id,name,site:site||'',contactsC}}];\n"
+      },
+      "id": "proc",
+      "name": "Process club",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 120],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst fedId=(($('Webhook').first().json.body)||{}).id||'k3j6j0ymtct3yd9';\nconst r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:'federation=\"'+fedId+'\"',perPage:1},headers:pbH,json:true});\nconst n=r.totalItems||0;\nawait this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/federations/records/'+fedId,headers:pbH,body:{status:(n>0?'scraped':'needs_review'),club_count:n,last_scraped:new Date().toISOString()},json:true});\nreturn [{json:{ok:true,clubs:n}}];\n"
+      },
+      "id": "fin",
+      "name": "Finalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, -140]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "PB Auth", "type": "main", "index": 0 }]] },
+    "PB Auth": { "main": [[{ "node": "Build clubs", "type": "main", "index": 0 }]] },
+    "Build clubs": { "main": [[{ "node": "Loop", "type": "main", "index": 0 }]] },
+    "Loop": {
+      "main": [
+        [{ "node": "Finalize", "type": "main", "index": 0 }],
+        [{ "node": "Process club", "type": "main", "index": 0 }]
+      ]
+    },
+    "Process club": { "main": [[{ "node": "Loop", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false,
+  "pinData": {},
+  "meta": { "templateId": "leblovina-extract-eliterro" }
+}
