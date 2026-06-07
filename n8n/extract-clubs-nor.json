@@ -1,0 +1,117 @@
+{
+  "name": "Leblovina — Extract clubs (NVBF klubboversikt / NOR)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "extract-clubs-nor",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-600, 0],
+      "webhookId": "extract-clubs-nor"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "p", "name": "pbUrl", "value": "https://leblovina.tools.biceps.digital", "type": "string" },
+            { "id": "u", "name": "srcUrl", "value": "https://volleyball.no/klubboversikt/", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-440, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-280, 0],
+      "credentials": {
+        "httpCustomAuth": { "id": "hzdBwrAqrPZjDmME", "name": "PocketBase admin (api)" }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const SRC=$('Config').first().json.srcUrl;\nconst fedId=(($('Webhook').first().json.body)||{}).id||'s2dfts98qyvmew2';\nlet html='';\ntry{html=await this.helpers.httpRequest({method:'GET',url:SRC,headers:{'User-Agent':'Mozilla/5.0'}});}catch(e){return [{json:{error:'fetch:'+e.message}}];}\nhtml=String(html);\nconst cfdecode=(hx)=>{try{const b=hx.match(/../g).map(x=>parseInt(x,16));const k=b[0];return b.slice(1).map(c=>String.fromCharCode(c^k)).join('');}catch(e){return '';}};\nconst strip=(s)=>s.replace(/<[^>]+>/g,'').replace(/&amp;/g,'&').replace(/&#0?38;/g,'&').replace(/&nbsp;/g,' ').trim();\nconst rows=html.match(/<tr[^>]*>[\\s\\S]*?<\\/tr>/g)||[];\nconst out=[];\nfor(const r of rows){const tds=r.match(/<td[^>]*>[\\s\\S]*?<\\/td>/g)||[];if(tds.length<4)continue;\n  const name=strip(tds[0]);if(!name||name.toLowerCase()==='klubb')continue;\n  const city=strip(tds[1]);\n  const cf=(tds[2].match(/data-cfemail=\"([0-9a-f]+)\"/)||[])[1];\n  const email=(cf?cfdecode(cf):strip(tds[2])).toLowerCase().trim();\n  const wm=(tds[3].match(/href=\"(https?:\\/\\/[^\"]+)\"/)||[])[1]||strip(tds[3]);\n  out.push({name,city,email,web:wm||'',fedId});\n}\nreturn out.map(o=>({json:o}));\n"
+      },
+      "id": "build",
+      "name": "Build clubs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-120, 0]
+    },
+    {
+      "parameters": { "batchSize": 25, "options": {} },
+      "id": "loop",
+      "name": "Loop",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [60, 0]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst SRC=$('Config').first().json.srcUrl;\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst isEmail=(e)=>/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(e);\nconst isSocial=(u)=>/facebook|instagram|twitter|x\\.com|tiktok|youtube|linkedin/i.test(u);\nconst normUrl=(u)=>{u=String(u||'').trim();if(!u)return '';if(u.startsWith('//'))u='https:'+u;if(!/^https?:/i.test(u))u='https://'+u;return u;};\nconst uslug=(s)=>String(s||'').toLowerCase().trim().replace(/[^\\p{L}\\p{N}]+/gu,'-').replace(/^-+|-+$/g,'');\nconst now=new Date().toISOString();\nconst findClub=async(k)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:\"(dedup_key='\"+k+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nconst findContact=async(e)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs:{filter:\"(email='\"+e.replace(/'/g,'')+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nlet created=0,contactsC=0;\nfor(const it of $input.all()){const c=it.json; const name=String(c.name||'').trim(); if(!name)continue;\n  let site=normUrl(c.web||''); if(isSocial(site))site='';\n  const email=String(c.email||'').toLowerCase().trim();\n  const dedup='NOR:'+uslug(name);\n  const base={federation:c.fedId,name,country:'Norway',city:c.city||'',dedup_key:dedup,source_url:SRC,last_scraped:now};\n  let clubId=null;\n  try{ try{const rec=await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/clubs/records',headers:pbH,body:Object.assign({},base,{website_url:site,website_source:site?'official_list':'none',status:'new'}),json:true});created++;clubId=rec.id;}\n    catch(e){const ex=await findClub(dedup);if(ex){const p=Object.assign({},base);if(site){p.website_url=site;p.website_source='official_list';}await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/clubs/records/'+ex.id,headers:pbH,body:p,json:true});clubId=ex.id;}else throw e;} }\n  catch(e){continue;}\n  if(email&&isEmail(email)){ try{await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/contacts/records',headers:pbH,body:{club:clubId,email,source_url:SRC,source_type:'directory',verification_status:'unverified'},json:true});contactsC++;}\n    catch(e){try{const ex=await findContact(email);if(ex&&!ex.club)await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/contacts/records/'+ex.id,headers:pbH,body:{club:clubId},json:true});}catch(_){}}\n  }\n}\nreturn [{json:{batch:$input.all().length,created,contactsC}}];\n"
+      },
+      "id": "proc",
+      "name": "Process batch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 120],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst fedId=(($('Webhook').first().json.body)||{}).id||'s2dfts98qyvmew2';\nconst r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:'federation=\"'+fedId+'\"',perPage:1},headers:pbH,json:true});\nconst n=r.totalItems||0;\nawait this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/federations/records/'+fedId,headers:pbH,body:{status:(n>0?'scraped':'needs_review'),club_count:n,last_scraped:new Date().toISOString()},json:true});\nreturn [{json:{ok:true,clubs:n}}];\n"
+      },
+      "id": "fin",
+      "name": "Finalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, -140]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "PB Auth", "type": "main", "index": 0 }]] },
+    "PB Auth": { "main": [[{ "node": "Build clubs", "type": "main", "index": 0 }]] },
+    "Build clubs": { "main": [[{ "node": "Loop", "type": "main", "index": 0 }]] },
+    "Loop": {
+      "main": [
+        [{ "node": "Finalize", "type": "main", "index": 0 }],
+        [{ "node": "Process batch", "type": "main", "index": 0 }]
+      ]
+    },
+    "Process batch": { "main": [[{ "node": "Loop", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false,
+  "pinData": {},
+  "meta": { "templateId": "leblovina-extract-nor" }
+}

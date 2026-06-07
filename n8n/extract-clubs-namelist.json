@@ -1,0 +1,76 @@
+{
+  "name": "Leblovina — Extract clubs (static name list)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "extract-clubs-namelist",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-600, 0],
+      "webhookId": "extract-clubs-namelist"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "p", "name": "pbUrl", "value": "https://leblovina.tools.biceps.digital", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-440, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-280, 0],
+      "credentials": {
+        "httpCustomAuth": { "id": "hzdBwrAqrPZjDmME", "name": "PocketBase admin (api)" }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst body=($('Webhook').first().json.body)||{};\nconst fedId=body.id; const url=body.url; const country=body.country||''; const prefix=body.prefix||'X'; const mode=body.mode||'cyp_li'; const region=body.region||'';\nif(!fedId||!url) return [{json:{error:'need id+url'}}];\nconst uslug=(s)=>String(s||'').toLowerCase().trim().replace(/[^\\p{L}\\p{N}]+/gu,'-').replace(/^-+|-+$/g,'');\nconst strip=(s)=>s.replace(/<[^>]+>/g,'').replace(/&amp;/g,'&').replace(/&nbsp;/g,' ').replace(/&#?[a-z0-9]+;/gi,' ').replace(/\\s+/g,' ').trim();\nconst now=new Date().toISOString();\nconst findClub=async(k)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:\"(dedup_key='\"+k+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nlet html='';\nconst BH={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36','Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8','Accept-Language':'en-US,en;q=0.9'};\ntry{html=String(await this.helpers.httpRequest({method:'GET',url,headers:BH}));}catch(e){return [{json:{error:'fetch:'+e.message}}];}\nlet names=[];\nif(mode==='cyp_li'){\n  const lis=html.match(/<li[^>]*>[\\s\\S]*?<\\/li>/g)||[];\n  for(const x of lis){const t=strip(x); if(/[\\u0370-\\u03ff\\u1f00-\\u1fff]/.test(t) && t.length>3 && t.length<60 && !/http|menu/i.test(t)) names.push(t);}\n}else if(mode==='lat_td'){\n  const rows=html.match(/<tr[^>]*>[\\s\\S]*?<\\/tr>/g)||[];\n  for(const r of rows){const tds=r.match(/<td[^>]*>[\\s\\S]*?<\\/td>/g)||[]; if(tds.length<2)continue; const t=strip(tds[1]); if(t && t.toLowerCase()!=='komanda' && !/^nr\\.?$/i.test(t) && t.length>2) names.push(t);}\n}\nconst seen={}; const uniq=[]; for(const n of names){const k=uslug(n); if(k&&!seen[k]){seen[k]=1;uniq.push(n);}}\nlet created=0,updated=0;\nfor(const name of uniq){const dedup=prefix+':'+uslug(name);\n  const base={federation:fedId,name,country,region,dedup_key:dedup,source_url:url,website_source:'none',status:'new',last_scraped:now};\n  try{ try{await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/clubs/records',headers:pbH,body:base,json:true});created++;}\n    catch(e){const ex=await findClub(dedup);if(ex){await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/clubs/records/'+ex.id,headers:pbH,body:{name,country,region,source_url:url,last_scraped:now},json:true});updated++;}else throw e;} }\n  catch(e){continue;}\n}\nlet n=0; try{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:'federation=\"'+fedId+'\"',perPage:1},headers:pbH,json:true});n=r.totalItems||0;}catch(e){}\nawait this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/federations/records/'+fedId,headers:pbH,body:{status:(n>0?'scraped':'needs_review'),club_count:n,last_scraped:now},json:true});\nreturn [{json:{mode,found:uniq.length,created,updated,fedClubs:n}}];\n"
+      },
+      "id": "proc",
+      "name": "Process list",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-80, 0],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "PB Auth", "type": "main", "index": 0 }]] },
+    "PB Auth": { "main": [[{ "node": "Process list", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false,
+  "pinData": {},
+  "meta": { "templateId": "leblovina-extract-namelist" }
+}

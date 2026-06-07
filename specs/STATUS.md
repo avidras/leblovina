@@ -139,6 +139,31 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > 'hundreds' was wrong.** The full Swiss roster is behind the authenticated `api.volleyball.ch/
 > indoor/clubs` ('Valid API-Key required') — deferred.
 > **Zero set now 7:** ALB, CYP, GIB, LAT, MON, NOR, UKR. (SVK done; SWE + SUI off-zero, partial.)
+
+> **Phase 3 round 6 (2026-06-07) — cleared the remaining 7 zero-club feds.**
+> - **NOR — 310 clubs + 310 contacts (all w/ email, 236 w/ website).** `volleyball.no/klubboversikt/`
+>   is a static 312-row table `Klubb | Poststed | E-post | Nettside` with **Cloudflare-obfuscated
+>   emails** (`data-cfemail`, decoded: first hex byte = XOR key). Built `extract-clubs-nor`
+>   (`3F0l7csD11ihAmMJ` | `/webhook/extract-clubs-nor`), dedup `NOR:<uslug(name)>`, batched loop.
+>   ⚠️ **NOR also has a duplicate 311-club set** from a pre-existing `Extract clubs (NIF ClubSearch)`
+>   workflow (`zA8cUjhYy1469qHl`, no repo export, ran once 09:16) sourced from `minidrett.no/idrettslag`
+>   — numeric dedup `NOR:<id>`, **no contacts, no websites**. Strictly inferior; recommend deleting
+>   that set (klubboversikt set supersedes it). NOR fed currently shows 621 clubs until deduped.
+> - **CYP — 31 clubs (names only, no contacts).** `volleyball.org.cy/somatia` lists clubs as static
+>   Greek `<li>` items. The site WAF 406s bare `Mozilla/5.0` — needs full browser headers (UA+Accept).
+> - **LAT — 9 clubs (names only).** `volejbols.lv/komandas` is youth-competition team rosters
+>   (team + coach, no contacts); captured distinct team names.
+> - CYP+LAT done via new generic **`extract-clubs-namelist`** (`Nq3ffFPlplikrqRw` |
+>   `/webhook/extract-clubs-namelist`): body `{id,url,country,prefix,mode,region}`, `mode` = `cyp_li`
+>   (Greek `<li>`) or `lat_td` (table column). Full browser headers to pass WAFs. Name-only, no contacts.
+> - **No clean source → marked `needs_review` with recon notes:** **ALB** (fshv.org.al has no club
+>   table/page; portfolio CPT is theme demo — the ~96-club claim was inaccurate), **GIB** (no website,
+>   social-only), **MON** (federation domain dead; Code Sport Monaco annuaire's Volley-ball section is
+>   empty), **UKR** (fvu.in.ua has only competition pages, no club registry).
+> **Zero-club CEV set: CLEARED.** All former zero feds now either have clubs (SVK/SWE/SUI/CYP/LAT/NOR)
+> or are resolved no-source (ALB/GIB/MON/UKR).
+>
+> _Last updated: 2026-06-07 (round 6 — remaining 7 cleared)._
 > **SUI blocker confirmed dead-end statically:** Algolia appId+searchKey are runtime-injected —
 > NOT in HTML, NOT in any `/_next/static/chunks/*.js` (only the Sentry DSN `…@sentry.visol.ch` and
 > `indexName:"clubs-0"` are literals; `searchClient` is an imported var, `[appId,apiKey]` read from
@@ -235,6 +260,9 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
   - Extract clubs (eliterro/SVK) `pq5ObaOqWYMvkJuk` | `/webhook/extract-clubs-eliterro`
   - Extract clubs (SVBF map/SWE) `Isoaq7s7VfszJcrM` | `/webhook/extract-clubs-svbf-map`
   - Extract clubs (searchkit/SUI) `zGJj5ZTSGfK0iAJ4` | `/webhook/extract-clubs-sui`
+  - Extract clubs (NVBF klubboversikt/NOR) `3F0l7csD11ihAmMJ` | `/webhook/extract-clubs-nor`
+  - Extract clubs (static name list; CYP/LAT) `Nq3ffFPlplikrqRw` | `/webhook/extract-clubs-namelist`
+  - Extract clubs (NIF ClubSearch/NOR) `zA8cUjhYy1469qHl` — **pre-existing, no repo export; superseded by extract-clubs-nor (NIF set has no contacts)**
   - Extract clubs (FFVB/FRA) `Vz1NsAbq4JWzwZr8` | `/webhook/extract-clubs-ffvb`
   - Extract clubs (Nevobo/NED) `42Ur1JEWgaQkDZ0a` | `/webhook/extract-clubs-nevobo`
   - Extract clubs (NIF/NOR) `zA8cUjhYy1469qHl` | `/webhook/extract-clubs-nif`
