@@ -1,0 +1,210 @@
+{
+  "name": "Leblovina — Extract clubs (Nevobo API)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "extract-clubs-nevobo",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        0
+      ],
+      "webhookId": "extract-clubs-nevobo"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p",
+              "name": "pbUrl",
+              "value": "https://leblovina.tools.biceps.digital",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -280,
+        0
+      ],
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "hzdBwrAqrPZjDmME",
+          "name": "PocketBase admin (api)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const r=await this.helpers.httpRequest({method:'GET',url:'https://api.nevobo.nl/relatiebeheer/verenigingen?page=1',headers:{'Accept':'application/ld+json'},json:true});\nconst total=r['hydra:totalItems']||0; const per=((r['hydra:member']||[]).length)||30; const pages=Math.max(1,Math.ceil(total/per));\nconst fedId=(($('Webhook').first().json.body)||{}).id;\nconst out=[]; for(let p=1;p<=pages;p++) out.push({json:{page:p,fedId}});\nreturn out;\n"
+      },
+      "id": "pages",
+      "name": "Pages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "loop",
+      "name": "Loop",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        60,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst fedId=$json.fedId; const page=$json.page;\nconst uslug=(s)=>String(s||'').toLowerCase().normalize('NFKC').replace(/[^\\p{L}\\p{N}]+/gu,'-').replace(/^-+|-+$/g,'').slice(0,60);\nconst normUrl=(u)=>{u=String(u||'').trim().replace(/^https?:\\/\\//i,'');if(!u)return '';if(/[\\s,]/.test(u)||!u.includes('.'))return '';return 'https://'+u;};\nconst isEmail=(e)=>/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(e);\nconst now=new Date().toISOString();\nconst findClub=async(k)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:\"(dedup_key='\"+k+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nconst findContact=async(e)=>{const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs:{filter:\"(email='\"+e.replace(/'/g,'')+\"')\",perPage:1},headers:pbH,json:true});return (r.items&&r.items[0])||null;};\nconst r=await this.helpers.httpRequest({method:'GET',url:'https://api.nevobo.nl/relatiebeheer/verenigingen?page='+page,headers:{'Accept':'application/ld+json'},json:true});\nconst mem=r['hydra:member']||[]; let created=0,contactsC=0;\nfor(const m of mem){ const name=String(m.naam||m.officielenaam||'').trim(); if(!name) continue;\n  const code=String(m.organisatiecode||'').toLowerCase(); const dedup='NED:'+(code||uslug(name));\n  const website=normUrl(m.website);\n  const base={federation:fedId,name,country:'Netherlands',region:String(m.provincie||''),city:String(m.vestigingsplaats||''),dedup_key:dedup,source_url:'https://api.nevobo.nl/relatiebeheer/verenigingen',source_club_id:String(m.organisatiecode||''),last_scraped:now};\n  let clubId=null;\n  try{ try{const rec=await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/clubs/records',headers:pbH,body:Object.assign({},base,{website_url:website,website_source:website?'official_list':'none',status:'new'}),json:true});created++;clubId=rec.id;}\n    catch(e){const ex=await findClub(dedup); if(ex){const p=Object.assign({},base);if(website){p.website_url=website;p.website_source='official_list';}await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/clubs/records/'+ex.id,headers:pbH,body:p,json:true});clubId=ex.id;}else throw e;} }\n  catch(e){continue;}\n  const email=String(m.email||'').trim().toLowerCase();\n  if(email&&isEmail(email)){ try{await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/contacts/records',headers:pbH,body:{club:clubId,email,phone:String(m.telefoon||''),source_url:'https://api.nevobo.nl/relatiebeheer/verenigingen',source_type:'directory',verification_status:'unverified'},json:true});contactsC++;}\n    catch(e){try{const ex=await findContact(email);if(ex&&!ex.club)await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/contacts/records/'+ex.id,headers:pbH,body:{club:clubId,phone:String(m.telefoon||'')},json:true});}catch(_){}}\n  }\n}\nreturn [{json:{page,members:mem.length,created,contactsC}}];\n"
+      },
+      "id": "up",
+      "name": "Upsert page",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst fedId=(($('Webhook').first().json.body)||{}).id;\nconst r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/clubs/records',qs:{filter:'federation=\"'+fedId+'\"',perPage:1},headers:pbH,json:true});\nconst n=r.totalItems||0;\nawait this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/federations/records/'+fedId,headers:pbH,body:{status:(n>0?'scraped':'needs_review'),club_count:n,last_scraped:new Date().toISOString(),scrape_note:'nevobo api: '+n+' clubs'},json:true});\nreturn [{json:{ok:true,clubs:n}}];\n"
+      },
+      "id": "fin",
+      "name": "Finalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        -140
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "PB Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PB Auth": {
+      "main": [
+        [
+          {
+            "node": "Pages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pages": {
+      "main": [
+        [
+          {
+            "node": "Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop": {
+      "main": [
+        [
+          {
+            "node": "Finalize",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upsert page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert page": {
+      "main": [
+        [
+          {
+            "node": "Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "templateId": "leblovina-extract-nevobo"
+  }
+}
