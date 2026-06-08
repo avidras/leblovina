@@ -7,6 +7,7 @@ export interface MenuAction {
   description?: string
   count?: number
   disabled?: boolean
+  danger?: boolean
   onSelect: () => void
 }
 
@@ -78,7 +79,7 @@ export function ActionsMenu({
                 i > 0 && 'border-t border-neutral-100',
               )}
             >
-              <div className="flex items-center justify-between gap-3 text-sm font-medium text-neutral-900">
+              <div className={cn('flex items-center justify-between gap-3 text-sm font-medium', a.danger ? 'text-red-600' : 'text-neutral-900')}>
                 <span>{a.label}</span>
                 {a.count != null && <span className="tabular-nums text-neutral-500">({a.count})</span>}
               </div>

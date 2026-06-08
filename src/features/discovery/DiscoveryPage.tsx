@@ -82,6 +82,29 @@ export function DiscoveryPage() {
     await reSearch(list.map((r) => r.id))
   }
 
+  // Permanently remove the filtered keyword set from the discovery queue (e.g. a misspelled
+  // country generated a bad batch). Respects the current filters/search.
+  async function deleteFiltered() {
+    const ok = await confirm({
+      title: 'Delete keywords',
+      message: `Permanently delete ${totalItems.toLocaleString()} keyword(s) in the current view? This removes them from the discovery queue and cannot be undone.`,
+      confirmLabel: `Delete ${totalItems.toLocaleString()}`,
+      destructive: true,
+    })
+    if (!ok) return
+    setBusy(true)
+    try {
+      const list = await pb.collection('search_keywords').getFullList<{ id: string }>({ filter: filter || undefined, fields: 'id', batch: 500 })
+      for (let i = 0; i < list.length; i += 20) {
+        await Promise.all(list.slice(i, i + 20).map((r) =>
+          pb.collection('search_keywords').delete(r.id).catch(() => {})))
+      }
+    } catch { /* non-fatal */ }
+    setBusy(false)
+    resetPage()
+    reload()
+  }
+
   // distinct countries present in the keyword registry (for the country filter)
   const [countryOpts, setCountryOpts] = useState<string[]>([])
   useEffect(() => {
@@ -133,8 +156,9 @@ export function DiscoveryPage() {
         <ActionsMenu
           busy={busy}
           actions={[
-            { label: `Re-search filtered (${totalItems.toLocaleString()})`, description: 'Reset the current view to pending so the queue runs them again', onClick: reSearchFiltered },
-            { label: 'Export CSV (filtered)', onClick: exportCsv },
+            { key: 'research', label: 'Re-search filtered', count: totalItems, description: 'Reset the current view to pending so the queue runs them again', onSelect: reSearchFiltered },
+            { key: 'export', label: 'Export CSV (filtered)', onSelect: exportCsv },
+            { key: 'delete', label: 'Delete filtered', count: totalItems, danger: true, description: 'Permanently remove these keywords from the discovery queue', disabled: totalItems === 0, onSelect: deleteFiltered },
           ]}
         />
       </div>
