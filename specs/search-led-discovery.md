@@ -1,5 +1,10 @@
 # Search-led club discovery ("No federation – Google")
 
+> **See also `## Generalization (v2)` near the end** — the discovery queue is being reframed into
+> a generic, **target-driven** "search & fill" engine (per-keyword `target` = which collection it
+> fills; manual single-keyword entry; opt-in generator with a pick-which-to-queue step). The
+> club flow below is `target='clubs'`, the first/default target.
+
 ## Goal
 
 Find volleyball clubs that are **not in any federation directory** by searching the open web.
@@ -156,3 +161,74 @@ Roma Pallavolo, …) tagged `B`/`needs_review` and enqueued for contact scraping
   clubs that lack a URL (possible later reconciliation).
 - Auto-promoting search clubs out of `needs_review` (manual vetting first).
 - Verifying contacts (handled by the existing Phase-3 verifier later).
+
+---
+
+## Generalization (v2) — a target-driven "search & fill" engine — DESIGN
+
+> **Status: DESIGN.** Reframes the discovery queue from a single hardcoded club flow into a
+> generic keyword engine. Decided via questionnaire. Build now with `target='clubs'`; the
+> `tournaments` target lights up when `specs/tournament-led-discovery.md`'s processor lands.
+
+### Concept
+Today: *enter a country → it generates club keywords → they auto-queue → scrape clubs.* One
+shape. v2 makes the queue abstract: **each keyword carries a `target`** = which collection/entity
+it fills. The drain stays target-agnostic; the **processor branches on `target`**. Adding a new
+discovery flow later = a new target + a processor branch, nothing else.
+
+### Decisions (agreed)
+1. **Per-keyword `target`.** Enum `clubs` (default/current) → later `tournaments`. The Discovery
+   table gains a Target column + filter.
+2. **Two ways to add keywords:**
+   - **Manual single keyword** — `{ keyword, target, country? }` → one `pending` row. (`country`
+     required when `target='clubs'` — the club classifier/labels need it; optional otherwise.)
+   - **Opt-in generator** — the user explicitly chooses to generate, picks a `target` + context
+     (clubs → country + count; tournaments → region/level + count, later), gets candidates back.
+3. **Generator = show & pick, save only chosen.** Generation **returns candidate keywords to the
+   UI without persisting them**. The user sees a checkbox list (all pre-checked), unticks the
+   unwanted, confirms → only the chosen rows are created as `pending`. No "draft" clutter.
+4. **Scope now:** ship the framework with `target='clubs'` working; expose `tournaments` in the
+   target picker only once its processor exists.
+
+### Schema
+- `search_keywords` gains **`target`** (select: `clubs` | `tournaments`, default `clubs`;
+  existing rows backfill to `clubs`). Keep the collection name (a rename is invasive); `pb.ts`
+  `SearchKeyword` gains `target` (+ a `SearchTarget` type). `country` stays (per-target optional).
+  Generic counters (`results_count`/`accepted_count`/`new_clubs`/`dup_count`) are reused; the UI
+  relabels them per target (e.g. `new_clubs` → "found" for tournaments).
+
+### Workflow changes
+- **`search-keywords-generate` becomes a pure candidate generator**: body `{ target, country?,
+  count? }` → **returns** `{ candidates: [{ keyword, lang }] }` (no DB writes). Branches the prompt
+  by `target` (clubs = the current city×club-term prompt; tournaments = tournament-name queries,
+  added with that route).
+- **Enqueue is client-side** (the UI is superuser-authed, as it already is for re-search): on
+  confirm, the UI `create()`s the chosen `search_keywords` rows (`status='pending'`, with `target`
+  + `country` + `lang`), catching the unique-`keyword` conflict as "already queued". Manual single
+  add uses the same client create. No new webhook needed.
+- **`search-discover-drain`** unchanged (dispatches any `pending` keyword regardless of target).
+- **`search-keyword-process` branches on `target`:** `clubs` → today's logic; `tournaments` →
+  the tournament processor logic (creates a `tournaments` row, finds participants, etc. — see the
+  tournament spec). The drain→processor split and Pause/stale-retry are shared.
+
+### UI (`DiscoveryPage.tsx`)
+- Replace the single "Generate keywords" bar with an **"Add keywords"** area with two modes:
+  - **Add one** — keyword input + `target` select + `country` (shown/required per target) → create.
+  - **Generate** — `target` + context + count → "Generate" → a **selectable candidate list**
+    (checkboxes, "Select all", a count) → "Add N selected" → client-creates the chosen `pending`
+    rows. Candidates live only in component state until added.
+- Table: add a **Target** column + a target filter; keep the existing status/country filters,
+  sorting, CSV, Pause/Resume, per-row + bulk re-search.
+
+### Reconciliation with the tournament route
+The tournament spec's "`tournaments` collection doubles as the keyword registry" is **superseded**:
+tournament **keywords live in this unified queue** (`target='tournaments'`); the `tournaments`
+collection holds the **discovered tournament entities** the processor creates. The tournament
+spec's `tournament-add` webhook is replaced by **manual single-keyword add with
+`target='tournaments'`** (+ the opt-in generator). See `specs/tournament-led-discovery.md`.
+
+### Out of scope (v2)
+- The `tournaments` processor branch itself (separate spec/build).
+- Per-target generator context beyond country (e.g. tournament level/age-group) — lands with the
+  tournament route.
+- Persisting/curating generated candidates as drafts (explicitly rejected — transient by decision).
