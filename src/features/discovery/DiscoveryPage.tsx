@@ -38,7 +38,7 @@ function buildFilter(f: { q: string; country: string; status: string }): string 
   return andFilter(
     f.country && pb.filter('country = {:v}', { v: f.country }),
     f.status && pb.filter('status = {:v}', { v: f.status }),
-    f.q && pb.filter('keyword ~ {:q}', { q: f.q }),
+    f.q && pb.filter('keyword ~ {:q} || country ~ {:q}', { q: f.q }),
   )
 }
 
@@ -140,7 +140,7 @@ export function DiscoveryPage() {
       <DrainPanel />
 
       <div className="flex flex-wrap items-center gap-2">
-        <Input className="max-w-xs" placeholder="Search keyword…" value={q} onChange={(e) => { setQ(e.target.value); resetPage() }} />
+        <Input className="max-w-xs" placeholder="Search keyword / country…" value={q} onChange={(e) => { setQ(e.target.value); resetPage() }} />
         <FilterPanel activeCount={[country, status].filter(Boolean).length}>
           <Select className="w-full" active={!!country} value={country} onChange={(e) => { setCountry(e.target.value); resetPage() }} title="Filter by country">
             <option value="">Any country</option>
