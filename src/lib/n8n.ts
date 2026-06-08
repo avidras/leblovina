@@ -127,16 +127,16 @@ export async function triggerScrapeEnqueue(
   return postWebhook(SCRAPE_ENQUEUE_URL, opts)
 }
 
-// Search-led discovery: generate localized search keywords for a country into the
-// `search_keywords` registry (status='pending'). The `search-discover-drain` cron then
-// runs them (Serper -> strict classifier -> URL-dedup -> create under "No federation –
-// Google" + enqueue for contact scraping), gated by settings.search_discover.enabled.
-// See specs/search-led-discovery.md.
+// Discovery v2: generate localized keyword CANDIDATES for a target (returns them; persists
+// nothing). The UI shows the candidates so the user can pick which to queue, then creates the
+// chosen `search_keywords` rows directly (status='pending'). The `search-discover-drain` cron
+// then runs them. See specs/search-led-discovery.md ("Generalization v2").
+// Response body: { target, country, count, candidates: [{ keyword, lang }] }.
 export async function triggerSearchKeywordsGenerate(
-  opts: { country: string; cities?: string[]; count?: number },
+  opts: { target?: 'clubs' | 'tournaments'; country?: string; cities?: string[]; count?: number },
 ): Promise<TriggerResult> {
   if (!SEARCH_KEYWORDS_URL) {
     return { ok: false, status: 0, error: 'VITE_N8N_SEARCH_KEYWORDS_URL is not set' }
   }
-  return postWebhook(SEARCH_KEYWORDS_URL, opts)
+  return postWebhook(SEARCH_KEYWORDS_URL, { target: 'clubs', ...opts })
 }

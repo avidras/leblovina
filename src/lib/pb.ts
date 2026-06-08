@@ -136,9 +136,14 @@ export interface ScrapeQueue {
 // tracking log drained by the `search-discover-drain` cron. See
 // specs/search-led-discovery.md.
 export type SearchKeywordStatus = 'pending' | 'searching' | 'searched' | 'error'
+// Discovery v2: which collection a keyword fills. 'clubs' = default/current; 'tournaments'
+// lights up when that processor lands. See specs/search-led-discovery.md ("Generalization v2").
+export type SearchTarget = 'clubs' | 'tournaments'
+export const SEARCH_TARGETS: SearchTarget[] = ['clubs', 'tournaments']
 export interface SearchKeyword {
   id: string
   keyword: string
+  target: SearchTarget | ''
   country: string
   lang: string
   status: SearchKeywordStatus | ''

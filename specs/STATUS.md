@@ -247,6 +247,20 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > still finishing the remaining keywords. **Tune from the new_clubs-vs-dup numbers before scaling
 > to more countries.**
 
+> **Discovery v2 — target-driven engine (2026-06-08):** Generalized the discovery queue from a
+> single hardcoded club flow into a keyword engine where each keyword carries a `target` (which
+> collection it fills). Built with `target='clubs'`; `tournaments` lights up when its processor
+> lands (design: `specs/tournament-led-discovery.md`). Migration `1780655800_search_keywords_target.js`
+> (also live via API): `search_keywords` += `target` select (clubs|tournaments, default clubs),
+> 1,837 existing rows backfilled to clubs. `pb.ts`: `SearchTarget` + `target`. **`search-keywords-
+> generate` reworked to RETURN candidates** `{candidates:[{keyword,lang}]}` (no DB write; prompt
+> branches by target — club + tournament prompts both present). UI (`DiscoveryPage`): "Add
+> keywords" area with two modes — **Add one** (keyword+target+country) and **Generate → pick**
+> (candidate checkbox list, all pre-checked, "Add N selected") — both create `pending` rows
+> client-side (superuser-authed pb.create, catching the unique-keyword conflict as "already
+> queued"). Tournaments target shown disabled ("coming soon") in the Add picker; Target column +
+> filter added to the table. Spec: `search-led-discovery.md` "Generalization (v2)".
+
 > **Phase 2.6 — resolve-time website enrichment (2026-06-07):** Reworked the `enrich-club`
 > resolve (`jOeufPcBBIWrij7M`, **deployed live + export in sync**). New `clubs` fields (migration
 > `1780655300_clubs_enrichment.js`, **not yet deployed to prod** — PB silently drops them on PATCH

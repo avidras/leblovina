@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { pb, type SearchKeyword } from '@/lib/pb'
+import { pb, type SearchKeyword, type SearchTarget } from '@/lib/pb'
 import { usePagedCollection } from '@/hooks/usePagedCollection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useUrlState, usePersistentState } from '@/hooks/useUrlState'
@@ -21,9 +21,15 @@ function andFilter(...clauses: (string | false | undefined)[]): string {
   return clauses.filter(Boolean).map((c) => `(${c})`).join(' && ')
 }
 
-type SortKey = 'keyword' | 'country' | 'status' | 'results_count' | 'accepted_count' | 'new_clubs' | 'dup_count' | 'searched_at' | 'created'
+type SortKey = 'keyword' | 'target' | 'country' | 'status' | 'results_count' | 'accepted_count' | 'new_clubs' | 'dup_count' | 'searched_at' | 'created'
 
 const STATUSES = ['pending', 'searching', 'searched', 'error'] as const
+// Targets currently offered for ADDING keywords (tournaments lights up when its processor lands).
+const ADD_TARGETS: { value: SearchTarget; label: string; enabled: boolean }[] = [
+  { value: 'clubs', label: 'Clubs', enabled: true },
+  { value: 'tournaments', label: 'Tournaments (coming soon)', enabled: false },
+]
+const TARGET_LABEL: Record<string, string> = { clubs: 'Clubs', tournaments: 'Tournaments' }
 function statusTone(s: string): 'green' | 'blue' | 'amber' | 'red' | 'neutral' {
   switch (s) {
     case 'searched': return 'green'
@@ -34,8 +40,9 @@ function statusTone(s: string): 'green' | 'blue' | 'amber' | 'red' | 'neutral' {
   }
 }
 
-function buildFilter(f: { q: string; country: string; status: string }): string {
+function buildFilter(f: { q: string; country: string; status: string; target: string }): string {
   return andFilter(
+    f.target && pb.filter('target = {:v}', { v: f.target }),
     f.country && pb.filter('country = {:v}', { v: f.country }),
     f.status && pb.filter('status = {:v}', { v: f.status }),
     f.q && pb.filter('keyword ~ {:q} || country ~ {:q}', { q: f.q }),
@@ -46,16 +53,17 @@ export function DiscoveryPage() {
   const [q, setQ] = useUrlState('q')
   const [country, setCountry] = useUrlState('country')
   const [status, setStatus] = useUrlState('status')
+  const [target, setTarget] = useUrlState('target')
   const [sort, setSort] = usePersistentState<{ key: SortKey; dir: 'asc' | 'desc' }>('discovery:sort', { key: 'created', dir: 'desc' })
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(100)
   const resetPage = () => setPage(1)
 
-  const filtersActive = [q, country, status].some(Boolean)
-  const resetFilters = () => { setQ(''); setCountry(''); setStatus(''); resetPage() }
+  const filtersActive = [q, country, status, target].some(Boolean)
+  const resetFilters = () => { setQ(''); setCountry(''); setStatus(''); setTarget(''); resetPage() }
 
   const debouncedQ = useDebouncedValue(q, 300)
-  const filter = useMemo(() => buildFilter({ q: debouncedQ.trim(), country, status }), [debouncedQ, country, status])
+  const filter = useMemo(() => buildFilter({ q: debouncedQ.trim(), country, status, target }), [debouncedQ, country, status, target])
   const sortStr = `${sort.dir === 'asc' ? '+' : '-'}${sort.key}`
   const { items, totalItems, totalPages, loading, error, reload } = usePagedCollection<SearchKeyword>('search_keywords', { page, perPage, sort: sortStr, filter })
   const { confirm, confirmElement } = useConfirm()
@@ -123,9 +131,9 @@ export function DiscoveryPage() {
 
   async function exportCsv() {
     const list = await pb.collection('search_keywords').getFullList<SearchKeyword>({ filter: filter || undefined, sort: sortStr, batch: 500 })
-    const cols = ['Keyword', 'Country', 'Lang', 'Status', 'Results', 'Accepted', 'New clubs', 'Dups', 'Searched at', 'Created']
+    const cols = ['Keyword', 'Target', 'Country', 'Lang', 'Status', 'Results', 'Accepted', 'New clubs', 'Dups', 'Searched at', 'Created']
     const rows = list.map((r) => ({
-      Keyword: r.keyword, Country: r.country, Lang: r.lang, Status: r.status,
+      Keyword: r.keyword, Target: r.target, Country: r.country, Lang: r.lang, Status: r.status,
       Results: r.results_count, Accepted: r.accepted_count, 'New clubs': r.new_clubs, Dups: r.dup_count,
       'Searched at': r.searched_at, Created: r.created,
     }))
@@ -136,12 +144,17 @@ export function DiscoveryPage() {
 
   return (
     <div className="space-y-4">
-      <GenerateBar onGenerated={() => { resetPage(); setTimeout(() => setPage(1), 200) }} />
+      <AddKeywords onAdded={() => { resetPage(); reload() }} />
       <DrainPanel />
 
       <div className="flex flex-wrap items-center gap-2">
         <Input className="max-w-xs" placeholder="Search keyword / country…" value={q} onChange={(e) => { setQ(e.target.value); resetPage() }} />
-        <FilterPanel activeCount={[country, status].filter(Boolean).length}>
+        <FilterPanel activeCount={[country, status, target].filter(Boolean).length}>
+          <Select className="w-full" active={!!target} value={target} onChange={(e) => { setTarget(e.target.value); resetPage() }} title="Filter by target">
+            <option value="">Any target</option>
+            <option value="clubs">Clubs</option>
+            <option value="tournaments">Tournaments</option>
+          </Select>
           <Select className="w-full" active={!!country} value={country} onChange={(e) => { setCountry(e.target.value); resetPage() }} title="Filter by country">
             <option value="">Any country</option>
             {countryOpts.map((c) => (<option key={c} value={c}>{c}</option>))}
@@ -167,6 +180,7 @@ export function DiscoveryPage() {
         <THead>
           <TR>
             <TH sortable sorted={sortedOf('keyword')} onClick={() => toggleSort('keyword')} className="w-[320px] min-w-[280px]">Keyword</TH>
+            <TH sortable sorted={sortedOf('target')} onClick={() => toggleSort('target')}>Target</TH>
             <TH sortable sorted={sortedOf('country')} onClick={() => toggleSort('country')}>Country</TH>
             <TH sortable sorted={sortedOf('status')} onClick={() => toggleSort('status')}>Status</TH>
             <TH sortable sorted={sortedOf('results_count')} onClick={() => toggleSort('results_count')} className="text-right">Results</TH>
@@ -181,6 +195,7 @@ export function DiscoveryPage() {
           {items.map((k) => (
             <TR key={k.id}>
               <TD className="font-medium text-neutral-800">{k.keyword}<span className="ml-1.5 text-xs text-neutral-400">{k.lang}</span></TD>
+              <TD><Badge tone={k.target === 'tournaments' ? 'amber' : 'neutral'}>{TARGET_LABEL[k.target] ?? k.target ?? 'clubs'}</Badge></TD>
               <TD>{k.country || '—'}</TD>
               <TD><Badge tone={statusTone(k.status)}>{k.status || '—'}</Badge></TD>
               <TD className="text-right tabular-nums text-neutral-500">{k.status === 'searched' ? k.results_count : '—'}</TD>
@@ -220,42 +235,144 @@ function ReSearchIcon() {
   )
 }
 
-// Generate localized search keywords for a country into the registry (status='pending').
-function GenerateBar({ onGenerated }: { onGenerated: () => void }) {
+type Candidate = { keyword: string; lang: string }
+
+// Add keywords to the discovery queue. Two modes: add a single keyword, or generate localized
+// candidates for a target/country and pick which to queue (nothing is saved until you confirm).
+// Each keyword carries a `target` = which collection it fills. See specs/search-led-discovery.md.
+function AddKeywords({ onAdded }: { onAdded: () => void }) {
+  const [mode, setMode] = useState<'generate' | 'one'>('generate')
+  const [target, setTarget] = useState<SearchTarget>('clubs')
   const [country, setCountry] = useState('')
+  const [keyword, setKeyword] = useState('')
   const [count, setCount] = useState('40')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+  const [candidates, setCandidates] = useState<Candidate[] | null>(null)
+  const [picked, setPicked] = useState<Set<number>>(new Set())
+
+  const needCountry = target === 'clubs' // the club classifier + labels need a target country
+
+  async function createRow(kw: string, lang: string): Promise<'added' | 'dup' | 'error'> {
+    try {
+      await pb.collection('search_keywords').create({ keyword: kw, target, country: country.trim(), lang, status: 'pending', attempts: 0 })
+      return 'added'
+    } catch (e) {
+      return (e as { status?: number })?.status === 400 ? 'dup' : 'error'
+    }
+  }
+
+  async function addOne() {
+    const kw = keyword.trim()
+    if (!kw) { setMsg('Enter a keyword.'); return }
+    if (needCountry && !country.trim()) { setMsg('Country is required for club keywords.'); return }
+    setBusy(true); setMsg(null)
+    const r = await createRow(kw, '')
+    setBusy(false)
+    if (r === 'added') { setMsg(`Added “${kw}”.`); setKeyword(''); onAdded() }
+    else if (r === 'dup') setMsg(`“${kw}” is already in the queue.`)
+    else setMsg('Failed to add keyword.')
+  }
 
   async function generate() {
-    const c = country.trim()
-    if (!c) { setMsg('Enter a country first.'); return }
-    setBusy(true); setMsg(null)
-    const r = await triggerSearchKeywordsGenerate({ country: c, count: Number(count) || 40 })
+    if (needCountry && !country.trim()) { setMsg('Enter a country first.'); return }
+    setBusy(true); setMsg(null); setCandidates(null)
+    const r = await triggerSearchKeywordsGenerate({ target, country: country.trim(), count: Number(count) || 40 })
     setBusy(false)
-    const body = r.body as { generated?: number; created?: number; duplicates?: number } | undefined
-    if (r.ok && body) {
-      setMsg(`Generated ${body.generated ?? 0} keywords for ${c} (${body.created ?? 0} new, ${body.duplicates ?? 0} already existed).`)
-      onGenerated()
+    const body = r.body as { candidates?: Candidate[] } | undefined
+    if (r.ok && body?.candidates?.length) {
+      setCandidates(body.candidates)
+      setPicked(new Set(body.candidates.map((_, i) => i))) // all pre-checked
     } else {
-      setMsg(`Failed: ${r.error || `HTTP ${r.status}`}`)
+      setMsg(`Failed: ${r.error || (body?.candidates ? 'no candidates returned' : `HTTP ${r.status}`)}`)
     }
+  }
+
+  function toggle(i: number) {
+    setPicked((p) => { const n = new Set(p); n.has(i) ? n.delete(i) : n.add(i); return n })
+  }
+
+  async function addSelected() {
+    if (!candidates) return
+    const chosen = candidates.filter((_, i) => picked.has(i))
+    if (!chosen.length) { setMsg('Select at least one keyword.'); return }
+    setBusy(true); setMsg(null)
+    let added = 0, dup = 0
+    for (const c of chosen) { const r = await createRow(c.keyword, c.lang || ''); if (r === 'added') added++; else if (r === 'dup') dup++ }
+    setBusy(false); setCandidates(null); setPicked(new Set())
+    setMsg(`Added ${added} keyword(s)${dup ? `, ${dup} already queued` : ''}.`)
+    onAdded()
   }
 
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-4">
-      <div className="mb-2 text-sm font-medium text-neutral-800">Generate keywords</div>
+      <div className="mb-3 flex items-center gap-2">
+        <span className="text-sm font-medium text-neutral-800">Add keywords</span>
+        <div className="ml-2 inline-flex rounded-md border border-neutral-200 p-0.5 text-xs">
+          {(['generate', 'one'] as const).map((m) => (
+            <button key={m} onClick={() => { setMode(m); setMsg(null); setCandidates(null) }}
+              className={`rounded px-2 py-1 ${mode === m ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-100'}`}>
+              {m === 'generate' ? 'Generate' : 'Add one'}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="flex flex-wrap items-end gap-2">
-        <Input className="max-w-xs" placeholder="Country (e.g. Italy)" value={country}
-          onChange={(e) => setCountry(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') generate() }} />
-        <Input className="w-24" type="number" min={5} max={120} value={count} onChange={(e) => setCount(e.target.value)} title="How many keywords" />
-        <Button size="sm" disabled={busy} onClick={generate}>{busy ? 'Generating…' : 'Generate'}</Button>
+        <label className="flex flex-col gap-1 text-xs text-neutral-500">Target
+          <Select value={target} onChange={(e) => { setTarget(e.target.value as SearchTarget); setCandidates(null) }}>
+            {ADD_TARGETS.map((t) => (<option key={t.value} value={t.value} disabled={!t.enabled}>{t.label}</option>))}
+          </Select>
+        </label>
+        {needCountry && (
+          <label className="flex flex-col gap-1 text-xs text-neutral-500">Country
+            <Input className="w-44" placeholder="e.g. Italy" value={country}
+              onChange={(e) => setCountry(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') mode === 'one' ? addOne() : generate() }} />
+          </label>
+        )}
+        {mode === 'one' ? (
+          <>
+            <label className="flex flex-col gap-1 text-xs text-neutral-500">Keyword
+              <Input className="w-72" placeholder="exact search query" value={keyword}
+                onChange={(e) => setKeyword(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addOne() }} />
+            </label>
+            <Button size="sm" disabled={busy} onClick={addOne}>{busy ? 'Adding…' : 'Add to queue'}</Button>
+          </>
+        ) : (
+          <>
+            <label className="flex flex-col gap-1 text-xs text-neutral-500">Count
+              <Input className="w-20" type="number" min={5} max={120} value={count} onChange={(e) => setCount(e.target.value)} />
+            </label>
+            <Button size="sm" disabled={busy} onClick={generate}>{busy ? 'Generating…' : 'Generate'}</Button>
+          </>
+        )}
         {msg && <span className="text-sm text-neutral-500">{msg}</span>}
       </div>
-      <p className="mt-2 text-xs text-neutral-400">
-        Localized volleyball-club search queries are generated for the country and queued. The drain (below) then runs them —
-        Serper search → strict AI club classifier → URL-dedup → new clubs under “No federation – Google” + contact scraping.
-      </p>
+
+      {candidates && (
+        <div className="mt-3 rounded-md border border-neutral-200">
+          <div className="flex items-center justify-between border-b border-neutral-200 px-3 py-2 text-xs">
+            <span className="text-neutral-500">{picked.size} of {candidates.length} selected</span>
+            <div className="flex gap-2">
+              <button className="text-blue-600 hover:underline" onClick={() => setPicked(new Set(candidates.map((_, i) => i)))}>Select all</button>
+              <button className="text-neutral-500 hover:underline" onClick={() => setPicked(new Set())}>None</button>
+            </div>
+          </div>
+          <div className="max-h-64 overflow-y-auto p-1">
+            {candidates.map((c, i) => (
+              <label key={i} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-neutral-50">
+                <input type="checkbox" checked={picked.has(i)} onChange={() => toggle(i)} />
+                <span className="text-neutral-800">{c.keyword}</span>
+                <span className="text-xs text-neutral-400">{c.lang}</span>
+              </label>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 border-t border-neutral-200 px-3 py-2">
+            <Button size="sm" disabled={busy || picked.size === 0} onClick={addSelected}>{busy ? 'Adding…' : `Add ${picked.size} to queue`}</Button>
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => { setCandidates(null); setPicked(new Set()) }}>Cancel</Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
