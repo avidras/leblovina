@@ -52,8 +52,8 @@ export interface Federation {
 export type ClubStatus = 'new' | 'contacts_found' | 'no_contacts' | 'error' | 'needs_review'
 // `search` = found by search-led discovery ("No federation – Google"); see
 // specs/search-led-discovery.md. Lower-trust until vetted (status='needs_review').
-export type WebsiteSource = 'official_list' | 'serper' | 'manual' | 'none' | 'search'
-export const WEBSITE_SOURCES: WebsiteSource[] = ['official_list', 'serper', 'manual', 'none', 'search']
+export type WebsiteSource = 'official_list' | 'serper' | 'manual' | 'none' | 'search' | 'tournament'
+export const WEBSITE_SOURCES: WebsiteSource[] = ['official_list', 'serper', 'manual', 'none', 'search', 'tournament']
 export type WebsiteStatus = 'unknown' | 'live' | 'dead' | 'not_found'
 export const WEBSITE_STATUSES: WebsiteStatus[] = ['unknown', 'live', 'dead', 'not_found']
 
@@ -72,6 +72,9 @@ export const CLUB_TYPES: ClubType[] = ['unknown', 'volleyball', 'multisport']
 export interface Club {
   id: string
   federation: string
+  // Tournament-discovered clubs belong to a tournament instead of a federation (federation is
+  // optional). See specs/tournament-led-discovery.md.
+  tournament: string
   name: string
   // English/Latin rendering of a non-Latin `name` (romanize + light translate),
   // set by the englishize-clubs workflow. Empty for Latin-script names. UI shows
@@ -153,6 +156,31 @@ export interface SearchKeyword {
   new_clubs: number
   dup_count: number
   attempts: number
+  notes: string
+  created: string
+  updated: string
+}
+
+// Mirrors the `tournaments` collection — discovered tournament entities (the tournament
+// lead route). Keywords live in `search_keywords` (target='tournaments'); the processor
+// creates a tournament row per found event. See specs/tournament-led-discovery.md.
+export type TournamentStatus =
+  | 'pending' | 'searching' | 'found' | 'extracted' | 'no_participants' | 'error' | 'needs_review'
+export interface Tournament {
+  id: string
+  name: string
+  keyword: string
+  country: string
+  website_url: string
+  participants_url: string
+  platform: string
+  status: TournamentStatus | ''
+  source: 'google' | 'manual' | ''
+  results_count: number
+  participants_count: number
+  clubs_found: number
+  attempts: number
+  last_run: string
   notes: string
   created: string
   updated: string

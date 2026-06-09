@@ -1,0 +1,406 @@
+{
+  "name": "Leblovina \u2014 Tournament process",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tournament-process",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -980,
+        0
+      ],
+      "webhookId": "tournament-process"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p",
+              "name": "pbUrl",
+              "value": "https://leblovina.tools.biceps.digital",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -820,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -660,
+        0
+      ],
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "hzdBwrAqrPZjDmME",
+          "name": "PocketBase admin (api)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/search_keywords/records/{{ $('Webhook').item.json.body.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('PB Auth').item.json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "getk",
+      "name": "Get Keyword",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -500,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://google.serper.dev/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ q: $('Get Keyword').item.json.keyword, num: 10 }) }}",
+        "options": {}
+      },
+      "id": "serp",
+      "name": "Serper Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -340,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "oPmSDcClj5DfGKCM",
+          "name": "Serper (leblovina)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const kw=$('Get Keyword').first().json;\nconst organic=(($('Serper Search').first().json||{}).organic)||[];\nconst hostOf=(u)=>String(u||'').replace(/^https?:\\/\\//i,'').replace(/^www\\./i,'').split(/[\\/?#]/)[0].toLowerCase();\nconst blocked=/(facebook|instagram|twitter|x\\.com|youtube|tiktok|wikipedia|fandom|pinterest|reddit)/i;\nconst PART=/(teams?|participant|participating|squadre|squadra|mannschaft|equipe|equipos|deelnemers|druzyn|clubs?|rooms?|draw|bracket|groups?|standings|classifica|tabella|entry|entries|startlist|iscritte|omades|komandos|lag)/i;\nconst orgs=organic.filter(r=>r.link&&/^https?:/i.test(r.link)&&!blocked.test(hostOf(r.link)));\nconst site=(orgs[0]&&orgs[0].link)||'';\nconst cands=orgs.filter(r=>PART.test(r.link||'')||PART.test(r.title||'')||PART.test(r.snippet||'')).map(r=>r.link);\nreturn [{json:{kwId:kw.id,keyword:kw.keyword,country:kw.country||'',resultsCount:organic.length,site:site||'https://example.invalid',host:hostOf(site),cands}}];\n"
+      },
+      "id": "pick",
+      "name": "Pick site",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -180,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.firecrawl.dev/v1/scrape",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $('Pick site').item.json.site, formats: ['markdown','links'], onlyMainContent: false, waitFor: 2500, timeout: 60000 }) }}",
+        "options": {
+          "timeout": 70000
+        }
+      },
+      "id": "fch",
+      "name": "Firecrawl Home",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -20,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ZxHAcWu5UlNAMy8X",
+          "name": "Firecrawl (leblovina)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const ps=$('Pick site').first().json;\nlet data={}; try{ data=($('Firecrawl Home').first().json||{}).data||{}; }catch(e){}\nconst homeMd=String(data.markdown||'');\nconst links=Array.isArray(data.links)?data.links:[];\nconst hostOf=(u)=>String(u||'').replace(/^https?:\\/\\//i,'').replace(/^www\\./i,'').split(/[\\/?#]/)[0].toLowerCase();\nconst PART=/(teams?|participant|participating|squadre|squadra|mannschaft|equipe|equipos|deelnemers|druzyn|clubs?|rooms?|draw|bracket|groups?|standings|classifica|tabella|entry|entries|startlist|iscritte|omades|komandos|lag)/i;\nlet cand=[].concat(ps.cands||[]);\nfor(const l of links){ if(typeof l==='string' && PART.test(l)) cand.push(l); }\n// also pull markdown links [text](url) whose text/url matches\nlet m; const reMd=/\\[([^\\]]+)\\]\\((https?:\\/\\/[^)]+)\\)/g;\nwhile((m=reMd.exec(homeMd))){ if(PART.test(m[1])||PART.test(m[2])) cand.push(m[2]); }\nconst seen=new Set(); const ordered=[];\nfor(const u of cand){ if(typeof u!=='string'||!/^https?:/i.test(u))continue; const k=u.split('#')[0]; if(seen.has(k))continue; seen.add(k); ordered.push(k); }\n// prefer same-host candidates first\nordered.sort((a,b)=>(hostOf(a)===ps.host?0:1)-(hostOf(b)===ps.host?0:1));\nconst participantsUrl=ordered[0]||ps.site;\nreturn [{json:Object.assign({},ps,{homeMd:homeMd.slice(0,4000),participantsUrl})}];\n"
+      },
+      "id": "fp",
+      "name": "Find participants",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        140,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.firecrawl.dev/v1/scrape",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $('Find participants').item.json.participantsUrl, formats: ['markdown','links'], onlyMainContent: false, waitFor: 2500, timeout: 60000 }) }}",
+        "options": {
+          "timeout": 70000
+        }
+      },
+      "id": "fcp",
+      "name": "Firecrawl Participants",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ZxHAcWu5UlNAMy8X",
+          "name": "Firecrawl (leblovina)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const fp=$('Find participants').first().json;\nlet pd={}; try{ pd=($('Firecrawl Participants').first().json||{}).data||{}; }catch(e){}\nconst partMd=String(pd.markdown||'');\nconst hostOf=(u)=>String(u||'').replace(/^https?:\\/\\//i,'').replace(/^www\\./i,'').split(/[\\/?#]/)[0].toLowerCase();\nconst bundle=[];\nif(partMd) bundle.push({url:fp.participantsUrl,text:partMd.slice(0,13000)});\nif(fp.homeMd && hostOf(fp.participantsUrl)!==hostOf(fp.site)) bundle.push({url:fp.site,text:String(fp.homeMd).slice(0,2500)});\nif(!bundle.length && fp.homeMd) bundle.push({url:fp.site,text:String(fp.homeMd).slice(0,8000)});\nconst ph=hostOf(fp.participantsUrl);\nconst platform=/dataproject/.test(ph)?'dataproject':/challonge/.test(ph)?'challonge':/sportsengine|sportngin/.test(ph)?'sportsengine':/tourneymachine|advancedeventsystems|aes/.test(ph)?'aes':'';\nreturn [{json:{kwId:fp.kwId,keyword:fp.keyword,country:fp.country,resultsCount:fp.resultsCount,site:fp.site,participantsUrl:fp.participantsUrl,platform,bundle}}];\n"
+      },
+      "id": "bun",
+      "name": "Bundle",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 3500, messages: [ { role: 'user', content: 'You are extracting the PARTICIPATING CLUBS/TEAMS of a volleyball tournament from rendered web pages. Tournament search keyword: ' + JSON.stringify($json.keyword) + '. Pages (url + content): ' + JSON.stringify($json.bundle) + '. Find the list of participating teams. Respond ONLY with compact JSON {\\\"is_tournament\\\":true,\\\"tournament_title\\\":\\\"\\\",\\\"participants_url\\\":\\\"\\\",\\\"platform\\\":\\\"\\\",\\\"teams\\\":[{\\\"name\\\":\\\"\\\",\\\"city\\\":\\\"\\\",\\\"country\\\":\\\"\\\",\\\"website\\\":\\\"\\\",\\\"is_club\\\":true}]}. Rules: is_tournament=true only if these pages are a real volleyball tournament/event (not a federation homepage, a news article, or a shop). teams = each participating team/club exactly as listed; set is_club=false when the entry is a NATIONAL TEAM, a country name, or an all-star/select squad (e.g. \\\"Germany\\\", \\\"Team USA\\\", \\\"Poland U21 National Team\\\"); website = the club own site if linked on the page, else \\\"\\\". If you cannot find a participant list, return teams:[]. platform = the site/software if obvious (dataproject, challonge, sportsengine, custom). No prose, no code fences.' } ] }) }}",
+        "options": {
+          "timeout": 40000
+        }
+      },
+      "id": "ext",
+      "name": "Extract",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        620,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "anthropicApi": {
+          "id": "PsTv3b7j6pP2jeMt",
+          "name": "Anthropic (leblovina)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst c=$('Bundle').first().json;\nconst uslug=(s)=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,80);\nlet out={}; try{ const resp=$('Extract').first().json; const txt=(resp&&resp.content&&resp.content[0]&&resp.content[0].text)||''; out=JSON.parse(String(txt).replace(/```json/gi,'').replace(/```/g,'').trim()); }catch(e){ out={}; }\nconst teams=Array.isArray(out.teams)?out.teams:[];\nconst COUNTRIES=new Set(['afghanistan','albania','algeria','andorra','argentina','armenia','australia','austria','azerbaijan','bahrain','belarus','belgium','bosnia','bosnia and herzegovina','brazil','bulgaria','canada','chile','china','colombia','croatia','cuba','cyprus','czechia','czech republic','denmark','dominican republic','egypt','england','estonia','finland','france','georgia','germany','greece','hungary','iceland','india','iran','iraq','ireland','israel','italy','japan','kazakhstan','kosovo','latvia','lithuania','luxembourg','malta','mexico','moldova','monaco','montenegro','morocco','netherlands','north macedonia','norway','poland','portugal','puerto rico','qatar','romania','russia','san marino','serbia','slovakia','slovenia','south korea','korea','spain','sweden','switzerland','thailand','tunisia','turkey','turkiye','ukraine','united states','usa','uruguay','wales','scotland']);\nconst isCountry=(n)=>{const t=String(n||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\\b(national team|nationalteam|u-?\\d+|men|women|w|m)\\b/g,'').replace(/[^a-z ]/g,'').trim(); return COUNTRIES.has(t);};\nconst keyEsc=String(c.keyword).replace(/\"/g,'');\nlet tour=null; try{ const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/tournaments/records',qs:{filter:'keyword=\"'+keyEsc+'\"',perPage:1},headers:pbH,json:true}); tour=(r.items&&r.items[0])||null; }catch(e){}\nconst tbody={name:String(out.tournament_title||c.keyword).slice(0,200),keyword:c.keyword,country:c.country||'',website_url:c.site||'',participants_url:out.participants_url||c.participantsUrl||'',platform:String(out.platform||c.platform||'').slice(0,60),source:'google',results_count:c.resultsCount||0,participants_count:teams.length,last_run:new Date().toISOString()};\nlet tid='';\nif(tour){ tid=tour.id; }\nelse { try{ const cr=await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/tournaments/records',headers:pbH,body:Object.assign({},tbody,{status:'found'}),json:true}); tid=cr.id; }catch(e){ try{ const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/tournaments/records',qs:{filter:'keyword=\"'+keyEsc+'\"',perPage:1},headers:pbH,json:true}); tid=(r.items&&r.items[0]&&r.items[0].id)||''; }catch(_){} } }\nlet created=0,dup=0,kept=0; const newIds=[];\nfor(const t of teams){ const name=String((t&&t.name)||'').trim(); if(!name)continue; if(t.is_club===false||isCountry(name))continue; kept++;\n  const dk='tournament:'+tid+':'+uslug(name);\n  const club={tournament:tid,name:name.slice(0,200),country:String(t.country||c.country||'').slice(0,80),city:String(t.city||'').slice(0,100),website_url:(/^https?:\\/\\//i.test(t.website||'')?t.website:''),website_source:'tournament',status:'needs_review',dedup_key:dk,notes:'Tournament discovery: '+String(out.tournament_title||c.keyword).slice(0,120)};\n  try{ const cr=await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/clubs/records',headers:pbH,body:club,json:true}); created++; newIds.push(cr.id); }catch(e){ dup++; }\n}\nif(newIds.length){ try{ await this.helpers.httpRequest({method:'POST',url:'https://n8n-2.biceps.digital/webhook/batch-enrich',headers:{'Content-Type':'application/json'},body:{ids:newIds,force:false},json:true,timeout:15000}); }catch(e){}\n  try{ await this.helpers.httpRequest({method:'POST',url:'https://n8n-2.biceps.digital/webhook/scrape-enqueue',headers:{'Content-Type':'application/json'},body:{ids:newIds},json:true,timeout:15000}); }catch(e){} }\nif(tid){ const st=teams.length?'extracted':(out.is_tournament?'no_participants':'needs_review'); try{ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/tournaments/records/'+tid,headers:pbH,body:Object.assign({},tbody,{status:st,clubs_found:created}),json:true}); }catch(e){} }\ntry{ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/search_keywords/records/'+c.kwId,headers:pbH,body:{status:'searched',searched_at:new Date().toISOString(),results_count:c.resultsCount||0,accepted_count:kept,new_clubs:created,dup_count:dup},json:true}); }catch(e){}\nreturn [{json:{kwId:c.kwId,tournament:tid,site:c.site,participantsUrl:c.participantsUrl,participants:teams.length,kept,created,dup}}];\n"
+      },
+      "id": "crt",
+      "name": "Create",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "PB Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PB Auth": {
+      "main": [
+        [
+          {
+            "node": "Get Keyword",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Keyword": {
+      "main": [
+        [
+          {
+            "node": "Serper Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Serper Search": {
+      "main": [
+        [
+          {
+            "node": "Pick site",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick site": {
+      "main": [
+        [
+          {
+            "node": "Firecrawl Home",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firecrawl Home": {
+      "main": [
+        [
+          {
+            "node": "Find participants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find participants": {
+      "main": [
+        [
+          {
+            "node": "Firecrawl Participants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firecrawl Participants": {
+      "main": [
+        [
+          {
+            "node": "Bundle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bundle": {
+      "main": [
+        [
+          {
+            "node": "Extract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract": {
+      "main": [
+        [
+          {
+            "node": "Create",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "templateId": "leblovina-tournament-process"
+  }
+}

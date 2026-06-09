@@ -1,8 +1,16 @@
 # Tournament-led club discovery ("Tournaments" route)
 
-> **Status: DESIGN (not built).** High-level feature design. Implementation follows after sign-off,
-> spec-first per CLAUDE.md. Mirrors the primitives of the Google-search route
-> (`specs/search-led-discovery.md`) and the federation route.
+> **Status: BUILT (v1, 2026-06-09).** Schema + processor + drain routing + UI live. As-built
+> deltas from this design: (a) the processor **renders with Firecrawl** (homepage → find
+> participants link → render participants page → LLM extract) because most tournament sites are
+> JS/Cloudflare (static fetch returned nothing on CEV/Challonge); (b) provenance is the
+> **`tournament` relation**, not `website_source` — the resolve step legitimately flips
+> `website_source` to `serper` once it finds a club's site, so the Clubs filter / dashboard group
+> key on `tournament != ''`; (c) clubs are created `website_source='tournament'` then
+> **batch-enrich (resolve) + scrape-enqueue** continue the pipeline. Validated on Italian SuperLega
+> → 8 real clubs, 6 auto-resolved to A-confidence sites. Known gap: bespoke pro SPAs (CEV) and
+> homepages without a discoverable participants link still yield 0 → `no_participants`/`needs_review`
+> (tune the participant-link finder against real targets — spec Phase 2).
 >
 > **Driven by the unified discovery engine.** Per `search-led-discovery.md`'s "Generalization
 > (v2)", tournament discovery is `target='tournaments'` in the shared `search_keywords` queue —

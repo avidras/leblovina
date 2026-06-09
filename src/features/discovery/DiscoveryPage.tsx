@@ -27,7 +27,7 @@ const STATUSES = ['pending', 'searching', 'searched', 'error'] as const
 // Targets currently offered for ADDING keywords (tournaments lights up when its processor lands).
 const ADD_TARGETS: { value: SearchTarget; label: string; enabled: boolean }[] = [
   { value: 'clubs', label: 'Clubs', enabled: true },
-  { value: 'tournaments', label: 'Tournaments (coming soon)', enabled: false },
+  { value: 'tournaments', label: 'Tournaments', enabled: true },
 ]
 const TARGET_LABEL: Record<string, string> = { clubs: 'Clubs', tournaments: 'Tournaments' }
 function statusTone(s: string): 'green' | 'blue' | 'amber' | 'red' | 'neutral' {
@@ -251,11 +251,13 @@ function AddKeywords({ onAdded }: { onAdded: () => void }) {
   const [candidates, setCandidates] = useState<Candidate[] | null>(null)
   const [picked, setPicked] = useState<Set<number>>(new Set())
 
-  const needCountry = target === 'clubs' // the club classifier + labels need a target country
+  // Generate produces localized queries for a country, so it needs one (for clubs). A single
+  // manually-added keyword is already a complete query — no country needed.
+  const generateNeedsCountry = target === 'clubs'
 
-  async function createRow(kw: string, lang: string): Promise<'added' | 'dup' | 'error'> {
+  async function createRow(kw: string, lang: string, ctry: string): Promise<'added' | 'dup' | 'error'> {
     try {
-      await pb.collection('search_keywords').create({ keyword: kw, target, country: country.trim(), lang, status: 'pending', attempts: 0 })
+      await pb.collection('search_keywords').create({ keyword: kw, target, country: ctry, lang, status: 'pending', attempts: 0 })
       return 'added'
     } catch (e) {
       return (e as { status?: number })?.status === 400 ? 'dup' : 'error'
@@ -265,9 +267,8 @@ function AddKeywords({ onAdded }: { onAdded: () => void }) {
   async function addOne() {
     const kw = keyword.trim()
     if (!kw) { setMsg('Enter a keyword.'); return }
-    if (needCountry && !country.trim()) { setMsg('Country is required for club keywords.'); return }
     setBusy(true); setMsg(null)
-    const r = await createRow(kw, '')
+    const r = await createRow(kw, '', '') // single keyword = a complete query; no country
     setBusy(false)
     if (r === 'added') { setMsg(`Added “${kw}”.`); setKeyword(''); onAdded() }
     else if (r === 'dup') setMsg(`“${kw}” is already in the queue.`)
@@ -275,7 +276,7 @@ function AddKeywords({ onAdded }: { onAdded: () => void }) {
   }
 
   async function generate() {
-    if (needCountry && !country.trim()) { setMsg('Enter a country first.'); return }
+    if (generateNeedsCountry && !country.trim()) { setMsg('Enter a country first.'); return }
     setBusy(true); setMsg(null); setCandidates(null)
     const r = await triggerSearchKeywordsGenerate({ target, country: country.trim(), count: Number(count) || 40 })
     setBusy(false)
@@ -298,7 +299,7 @@ function AddKeywords({ onAdded }: { onAdded: () => void }) {
     if (!chosen.length) { setMsg('Select at least one keyword.'); return }
     setBusy(true); setMsg(null)
     let added = 0, dup = 0
-    for (const c of chosen) { const r = await createRow(c.keyword, c.lang || ''); if (r === 'added') added++; else if (r === 'dup') dup++ }
+    for (const c of chosen) { const r = await createRow(c.keyword, c.lang || '', country.trim()); if (r === 'added') added++; else if (r === 'dup') dup++ }
     setBusy(false); setCandidates(null); setPicked(new Set())
     setMsg(`Added ${added} keyword(s)${dup ? `, ${dup} already queued` : ''}.`)
     onAdded()
@@ -324,22 +325,22 @@ function AddKeywords({ onAdded }: { onAdded: () => void }) {
             {ADD_TARGETS.map((t) => (<option key={t.value} value={t.value} disabled={!t.enabled}>{t.label}</option>))}
           </Select>
         </label>
-        {needCountry && (
-          <label className="flex flex-col gap-1 text-xs text-neutral-500">Country
-            <Input className="w-44" placeholder="e.g. Italy" value={country}
-              onChange={(e) => setCountry(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') mode === 'one' ? addOne() : generate() }} />
-          </label>
-        )}
         {mode === 'one' ? (
           <>
-            <label className="flex flex-col gap-1 text-xs text-neutral-500">Keyword
-              <Input className="w-72" placeholder="exact search query" value={keyword}
+            <label className="flex flex-1 flex-col gap-1 text-xs text-neutral-500">Keyword
+              <Input className="min-w-[18rem]" placeholder="exact search query (a complete query)" value={keyword}
                 onChange={(e) => setKeyword(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addOne() }} />
             </label>
             <Button size="sm" disabled={busy} onClick={addOne}>{busy ? 'Adding…' : 'Add to queue'}</Button>
           </>
         ) : (
           <>
+            {generateNeedsCountry && (
+              <label className="flex flex-col gap-1 text-xs text-neutral-500">Country
+                <Input className="w-44" placeholder="e.g. Italy" value={country}
+                  onChange={(e) => setCountry(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') generate() }} />
+              </label>
+            )}
             <label className="flex flex-col gap-1 text-xs text-neutral-500">Count
               <Input className="w-20" type="number" min={5} max={120} value={count} onChange={(e) => setCount(e.target.value)} />
             </label>

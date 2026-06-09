@@ -12,6 +12,7 @@ interface Stats {
   queueQueued: number; queueDone: number
   byConf: ConfRow[]
   searchClubs: number; searchContacts: number
+  tourClubs: number; tourContacts: number
 }
 
 function useStats(): Stats | null {
@@ -36,11 +37,13 @@ function useStats(): Stats | null {
         })))
         // search-led discovery ("No federation – Google") — its confederation is blank,
         // so count it separately by provenance. See specs/search-led-discovery.md.
-        const [searchClubs, searchContacts] = await Promise.all([
+        const [searchClubs, searchContacts, tourClubs, tourContacts] = await Promise.all([
           n('clubs', "website_source='search'"),
           n('contacts', "club.website_source='search'"),
+          n('clubs', "tournament!=''"),
+          n('contacts', "club.tournament!=''"),
         ])
-        if (alive) setS({ feds, fedsScraped, clubs, clubsSite, clubsScraped, contacts, contactsClubSite, contactsDir, queueQueued, queueDone, byConf, searchClubs, searchContacts })
+        if (alive) setS({ feds, fedsScraped, clubs, clubsSite, clubsScraped, contacts, contactsClubSite, contactsDir, queueQueued, queueDone, byConf, searchClubs, searchContacts, tourClubs, tourContacts })
       } catch { /* non-fatal */ }
     })()
     return () => { alive = false }
@@ -112,6 +115,13 @@ export function DashboardPage({ onNavigate }: { onNavigate: (v: NavView) => void
                     <td className="px-4 py-2 font-medium text-neutral-800">No federation (Google search and scrape)</td>
                     <td className="px-4 py-2 text-right tabular-nums">{s.searchClubs.toLocaleString()}</td>
                     <td className="px-4 py-2 text-right tabular-nums">{s.searchContacts.toLocaleString()}</td>
+                  </tr>
+                )}
+                {s.tourClubs > 0 && (
+                  <tr className="border-b border-neutral-100 last:border-0 bg-neutral-50/60">
+                    <td className="px-4 py-2 font-medium text-neutral-800">Tournaments</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{s.tourClubs.toLocaleString()}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{s.tourContacts.toLocaleString()}</td>
                   </tr>
                 )}
               </tbody>

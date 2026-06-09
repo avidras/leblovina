@@ -43,8 +43,14 @@ function buildClubsFilter(f: {
     f.ws && (f.ws === 'unknown' ? "website_status = 'unknown' || website_status = ''" : pb.filter('website_status = {:v}', { v: f.ws })),
     f.wc && (f.wc === 'unknown' ? "website_confidence = 'unknown' || website_confidence = ''" : pb.filter('website_confidence = {:v}', { v: f.wc })),
     f.ct && (f.ct === 'unknown' ? "club_type = 'unknown' || club_type = ''" : pb.filter('club_type = {:v}', { v: f.ct })),
-    // provenance: pick one source, or "not_search" to exclude the search-discovered ("Google") clubs
-    f.src && (f.src === 'not_search' ? "website_source != 'search'" : pb.filter('website_source = {:v}', { v: f.src })),
+    // provenance: a website_source, "not_search" to exclude Google clubs, or "via_tournament"
+    // = discovered through a tournament (keyed on the relation, since resolve may flip the
+    // website_source to 'serper' once it finds the club's site).
+    f.src && (
+      f.src === 'not_search' ? "website_source != 'search'" :
+      f.src === 'via_tournament' ? "tournament != ''" :
+      pb.filter('website_source = {:v}', { v: f.src })
+    ),
     f.q && pb.filter('name ~ {:q} || name_en ~ {:q} || country ~ {:q} || region ~ {:q} || city ~ {:q}', { q: f.q }),
   )
 }
@@ -55,6 +61,7 @@ const WEBSITE_SOURCE_LABEL: Record<string, string> = {
   manual: 'Manual',
   none: 'No source',
   search: 'Search discovery (Google)',
+  tournament: 'Tournament participant link',
 }
 
 // A = trusted (green), B = probable (blue), C = low-confidence/review (amber).
@@ -302,6 +309,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
             {WEBSITE_SOURCES.map((s) => (
               <option key={s} value={s}>{WEBSITE_SOURCE_LABEL[s] ?? s}</option>
             ))}
+            <option value="via_tournament">Discovered via tournament</option>
             <option value="not_search">Exclude search discovery (Google)</option>
           </Select>
         </FilterPanel>

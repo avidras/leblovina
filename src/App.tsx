@@ -9,8 +9,9 @@ import { ClubsPage } from '@/features/clubs/ClubsPage'
 import { ContactsPage } from '@/features/contacts/ContactsPage'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { DiscoveryPage } from '@/features/discovery/DiscoveryPage'
+import { TournamentsPage } from '@/features/tournaments/TournamentsPage'
 
-const VIEWS = ['dashboard', 'federations', 'clubs', 'contacts', 'discovery'] as const
+const VIEWS = ['dashboard', 'federations', 'clubs', 'contacts', 'discovery', 'tournaments'] as const
 type View = (typeof VIEWS)[number]
 
 // The current view lives in the URL path (`/federations`, `/clubs`) so it
@@ -113,15 +114,17 @@ export default function App() {
           <ClubsPage key={country ?? ''} initialCountry={country} onOpenContacts={(id) => navigate('contacts', { club: id })} />
         ) : view === 'contacts' ? (
           <ContactsPage key={club ?? ''} initialClub={club} />
-        ) : (
+        ) : view === 'discovery' ? (
           <DiscoveryPage />
+        ) : (
+          <TournamentsPage onOpenClubs={() => navigate('discovery')} />
         )}
       </main>
     </div>
   )
 }
 
-const VIEW_LABELS: Record<View, string> = { dashboard: 'Dashboard', federations: 'Federations', clubs: 'Clubs', contacts: 'Contacts', discovery: 'Discovery' }
+const VIEW_LABELS: Record<View, string> = { dashboard: 'Dashboard', federations: 'Federations', clubs: 'Clubs', contacts: 'Contacts', discovery: 'Discovery', tournaments: 'Tournaments' }
 
 // Nav with a live total chip per view. The hooks live here (not at the top level)
 // so they only run once the user is authed and this subtree mounts.
@@ -132,6 +135,7 @@ function MainNav({ view, navigate, className = '', vertical = false }: { view: V
     clubs: useCollectionTotal('clubs'),
     contacts: useCollectionTotal('contacts'),
     discovery: useCollectionTotal('search_keywords'),
+    tournaments: useCollectionTotal('tournaments'),
   }
   return (
     <nav className={`${vertical ? 'flex flex-col gap-1' : 'flex gap-1'} ${className}`}>
