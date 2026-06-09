@@ -256,9 +256,12 @@ function AddKeywords({ onAdded }: { onAdded: () => void }) {
   // Broad keywords are paginated deeper (Serper caps a single request at 10).
   const candidatePages = breadth === 'broad' ? 3 : 1
 
-  // Generate produces localized queries for a country, so it needs one (for clubs). A single
-  // manually-added keyword is already a complete query — no country needed.
-  const generateNeedsCountry = target === 'clubs'
+  // Generate needs an input: clubs → a country; tournaments → a location (country/city) OR a
+  // specific tournament name. (A single manually-added keyword is already a complete query.)
+  const generateNeedsCountry = true
+  const isTournaments = target === 'tournaments'
+  const inputLabel = isTournaments ? 'Location or tournament name' : 'Country'
+  const inputPlaceholder = isTournaments ? 'e.g. Germany, Berlin, or “CEV Champions League”' : 'e.g. Italy'
 
   async function createRow(kw: string, lang: string, ctry: string, pages = 1): Promise<'added' | 'dup' | 'error'> {
     try {
@@ -281,7 +284,7 @@ function AddKeywords({ onAdded }: { onAdded: () => void }) {
   }
 
   async function generate() {
-    if (generateNeedsCountry && !country.trim()) { setMsg('Enter a country first.'); return }
+    if (!country.trim()) { setMsg(`Enter a ${isTournaments ? 'location or tournament name' : 'country'} first.`); return }
     setBusy(true); setMsg(null); setCandidates(null)
     const r = await triggerSearchKeywordsGenerate({ target, country: country.trim(), count: Number(count) || 40, breadth, focus: focus.trim() })
     setBusy(false)
@@ -340,12 +343,10 @@ function AddKeywords({ onAdded }: { onAdded: () => void }) {
           </>
         ) : (
           <>
-            {generateNeedsCountry && (
-              <label className="flex flex-col gap-1 text-xs text-neutral-500">Country
-                <Input className="w-44" placeholder="e.g. Italy" value={country}
-                  onChange={(e) => setCountry(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') generate() }} />
-              </label>
-            )}
+            <label className="flex flex-col gap-1 text-xs text-neutral-500">{inputLabel}
+              <Input className={isTournaments ? 'w-72' : 'w-44'} placeholder={inputPlaceholder} value={country}
+                onChange={(e) => setCountry(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') generate() }} />
+            </label>{/* tournaments: location (country/city) OR a specific tournament name */}
             {target === 'clubs' && (
               <label className="flex flex-col gap-1 text-xs text-neutral-500">Breadth
                 <div className="inline-flex rounded-md border border-neutral-200 p-0.5">
