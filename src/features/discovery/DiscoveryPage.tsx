@@ -14,6 +14,7 @@ import { FilterPanel, ResetFiltersButton } from '@/components/ui/filter-panel'
 import { ActionsMenu } from '@/components/ui/menu'
 import { useConfirm } from '@/components/ui/confirm'
 import { Dialog } from '@/components/ui/dialog'
+import { COUNTRY_LIST } from '@/lib/countries'
 import { Pagination } from '@/components/ui/pagination'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
@@ -395,9 +396,17 @@ function AddKeywords({ onAdded }: { onAdded: () => void }) {
         ) : (
           <>
             <label className="flex flex-col gap-1 text-xs text-neutral-500">{inputLabel}
-              <Input className={isTournaments ? 'w-72' : 'w-44'} placeholder={inputPlaceholder} value={country}
-                onChange={(e) => setCountry(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') generate() }} />
-            </label>{/* tournaments: location (country/city) OR a specific tournament name */}
+              {/* Clubs: pick a country (prevents typos). Tournaments: free text — a location OR a tournament name. */}
+              {isTournaments ? (
+                <Input className="w-72" placeholder={inputPlaceholder} value={country}
+                  onChange={(e) => setCountry(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') generate() }} />
+              ) : (
+                <Select className="w-48" active={!!country} value={country} onChange={(e) => setCountry(e.target.value)}>
+                  <option value="">Select country…</option>
+                  {COUNTRY_LIST.map((c) => (<option key={c} value={c}>{c}</option>))}
+                </Select>
+              )}
+            </label>
             {target === 'clubs' && (
               <label className="flex flex-col gap-1 text-xs text-neutral-500">Breadth
                 <div className="inline-flex rounded-md border border-neutral-200 p-0.5">

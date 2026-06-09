@@ -255,3 +255,9 @@ export function withFlag(name?: string | null): string {
   const flag = countryFlag(name)
   return flag ? `${flag} ${name}` : name
 }
+
+// Sorted list of primary English country names — for country pickers (e.g. keyword
+// generation), so a country is chosen, not free-typed (avoids typos like "Filand").
+export const COUNTRY_LIST: string[] = Object.values(COUNTRY_NAMES)
+  .map((names) => names[0])
+  .sort((a, b) => a.localeCompare(b))
