@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { FilterPanel, ResetFiltersButton } from '@/components/ui/filter-panel'
 import { ActionsMenu } from '@/components/ui/menu'
 import { useConfirm } from '@/components/ui/confirm'
+import { Dialog } from '@/components/ui/dialog'
 import { Pagination } from '@/components/ui/pagination'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
@@ -68,6 +69,9 @@ export function DiscoveryPage() {
   const { items, totalItems, totalPages, loading, error, reload } = usePagedCollection<SearchKeyword>('search_keywords', { page, perPage, sort: sortStr, filter })
   const { confirm, confirmElement } = useConfirm()
   const [busy, setBusy] = useState(false)
+  const [pagesDlg, setPagesDlg] = useState(false)
+  const [pagesVal, setPagesVal] = useState('3')
+  const [pagesRerun, setPagesRerun] = useState(true)
 
   // Re-search = reset keyword(s) to 'pending' so the drain runs them again (when enabled).
   async function reSearch(ids: string[]) {
@@ -110,6 +114,25 @@ export function DiscoveryPage() {
     } catch { /* non-fatal */ }
     setBusy(false)
     resetPage()
+    reload()
+  }
+
+  // Set the Serper pagination depth (pages) on the filtered set — widens existing keywords
+  // (each page ≈ 10 results). Optionally resets them to pending so the queue re-runs them.
+  async function applyPages() {
+    const n = Math.max(1, Math.min(5, Number(pagesVal) || 1))
+    setPagesDlg(false)
+    setBusy(true)
+    try {
+      const list = await pb.collection('search_keywords').getFullList<{ id: string }>({ filter: filter || undefined, fields: 'id', batch: 500 })
+      const body: Record<string, unknown> = { pages: n }
+      if (pagesRerun) { body.status = 'pending'; body.attempts = 0 }
+      for (let i = 0; i < list.length; i += 20) {
+        await Promise.all(list.slice(i, i + 20).map((r) =>
+          pb.collection('search_keywords').update(r.id, body).catch(() => {})))
+      }
+    } catch { /* non-fatal */ }
+    setBusy(false)
     reload()
   }
 
@@ -170,6 +193,7 @@ export function DiscoveryPage() {
           busy={busy}
           actions={[
             { key: 'research', label: 'Re-search filtered', count: totalItems, description: 'Reset the current view to pending so the queue runs them again', onSelect: reSearchFiltered },
+            { key: 'pages', label: 'Set pages (widen)', count: totalItems, description: 'Set Serper pagination depth (1–5) for these keywords; ~10 results per page', disabled: totalItems === 0, onSelect: () => setPagesDlg(true) },
             { key: 'export', label: 'Export CSV (filtered)', onSelect: exportCsv },
             { key: 'delete', label: 'Delete filtered', count: totalItems, danger: true, description: 'Permanently remove these keywords from the discovery queue', disabled: totalItems === 0, onSelect: deleteFiltered },
           ]}
@@ -222,6 +246,33 @@ export function DiscoveryPage() {
       <Pagination page={page} perPage={perPage} totalItems={totalItems} totalPages={totalPages}
         onPage={setPage} onPerPage={(n) => { setPerPage(n); resetPage() }} />
       {confirmElement}
+
+      <Dialog
+        open={pagesDlg}
+        onClose={() => setPagesDlg(false)}
+        title="Set pages (pagination depth)"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="outline" onClick={() => setPagesDlg(false)}>Cancel</Button>
+            <Button size="sm" onClick={applyPages}>Apply to {totalItems.toLocaleString()}</Button>
+          </div>
+        }
+      >
+        <div className="space-y-3 text-sm">
+          <p className="text-neutral-600">
+            Serper returns ~10 results per page. Set how many pages each of the{' '}
+            <span className="font-medium">{totalItems.toLocaleString()}</span> filtered keyword(s) fetches
+            (3 ≈ ~30 deduped results). More pages = more Serper calls.
+          </p>
+          <label className="flex items-center gap-2">Pages
+            <Input className="w-20" type="number" min={1} max={5} value={pagesVal} onChange={(e) => setPagesVal(e.target.value)} />
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={pagesRerun} onChange={(e) => setPagesRerun(e.target.checked)} />
+            Re-search now (reset to pending so the queue re-runs them)
+          </label>
+        </div>
+      </Dialog>
     </div>
   )
 }
