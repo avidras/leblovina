@@ -232,3 +232,24 @@ spec's `tournament-add` webhook is replaced by **manual single-keyword add with
 - Per-target generator context beyond country (e.g. tournament level/age-group) — lands with the
   tournament route.
 - Persisting/curating generated candidates as drafts (explicitly rejected — transient by decision).
+
+## Broad keyword generation + pagination (v3)
+
+Two breadth modes for club keyword generation, chosen in the Add-keywords bar:
+
+- **Per-city (specific)** — the original: volleyball-term × club-words × major cities →
+  precise queries that surface a single club's own site. High precision, lower recall.
+- **Broad** — input is **Country + optional Focus** (e.g. "Germany" + "youth clubs"). The
+  generator (`search-keywords-generate` → "Build prompt", `breadth='broad'`) produces
+  high-recall, NOT-city-bound localized queries (club/Verein/klub words, youth/level words,
+  list/directory words, broad regions). Favours recall over precision.
+
+**Pagination.** Serper's `/search` ignores `num` and returns **max 10 results per request**
+(verified) — more requires the `page` param. So each keyword carries a `pages` field
+(`search_keywords.pages`, 1–5): broad keywords are created with `pages=3` (~30 deduped
+results), per-city/manual keywords stay at `1`. The processor (`search-keyword-process`) has a
+**Pages** node that fans out `1..pages`; the Serper node runs once per page; "Prepare
+candidates" combines + de-dupes organic across pages by link.
+
+Cost: a broad keyword ≈ 3× the Serper calls of a specific one — which is why pagination is
+opt-in per keyword (broad only), not global.

@@ -246,18 +246,23 @@ function AddKeywords({ onAdded }: { onAdded: () => void }) {
   const [country, setCountry] = useState('')
   const [keyword, setKeyword] = useState('')
   const [count, setCount] = useState('40')
+  const [breadth, setBreadth] = useState<'specific' | 'broad'>('specific')
+  const [focus, setFocus] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [candidates, setCandidates] = useState<Candidate[] | null>(null)
   const [picked, setPicked] = useState<Set<number>>(new Set())
 
+  // Broad keywords are paginated deeper (Serper caps a single request at 10).
+  const candidatePages = breadth === 'broad' ? 3 : 1
+
   // Generate produces localized queries for a country, so it needs one (for clubs). A single
   // manually-added keyword is already a complete query — no country needed.
   const generateNeedsCountry = target === 'clubs'
 
-  async function createRow(kw: string, lang: string, ctry: string): Promise<'added' | 'dup' | 'error'> {
+  async function createRow(kw: string, lang: string, ctry: string, pages = 1): Promise<'added' | 'dup' | 'error'> {
     try {
-      await pb.collection('search_keywords').create({ keyword: kw, target, country: ctry, lang, status: 'pending', attempts: 0 })
+      await pb.collection('search_keywords').create({ keyword: kw, target, country: ctry, lang, pages, status: 'pending', attempts: 0 })
       return 'added'
     } catch (e) {
       return (e as { status?: number })?.status === 400 ? 'dup' : 'error'
@@ -278,7 +283,7 @@ function AddKeywords({ onAdded }: { onAdded: () => void }) {
   async function generate() {
     if (generateNeedsCountry && !country.trim()) { setMsg('Enter a country first.'); return }
     setBusy(true); setMsg(null); setCandidates(null)
-    const r = await triggerSearchKeywordsGenerate({ target, country: country.trim(), count: Number(count) || 40 })
+    const r = await triggerSearchKeywordsGenerate({ target, country: country.trim(), count: Number(count) || 40, breadth, focus: focus.trim() })
     setBusy(false)
     const body = r.body as { candidates?: Candidate[] } | undefined
     if (r.ok && body?.candidates?.length) {
@@ -299,7 +304,7 @@ function AddKeywords({ onAdded }: { onAdded: () => void }) {
     if (!chosen.length) { setMsg('Select at least one keyword.'); return }
     setBusy(true); setMsg(null)
     let added = 0, dup = 0
-    for (const c of chosen) { const r = await createRow(c.keyword, c.lang || '', country.trim()); if (r === 'added') added++; else if (r === 'dup') dup++ }
+    for (const c of chosen) { const r = await createRow(c.keyword, c.lang || '', country.trim(), candidatePages); if (r === 'added') added++; else if (r === 'dup') dup++ }
     setBusy(false); setCandidates(null); setPicked(new Set())
     setMsg(`Added ${added} keyword(s)${dup ? `, ${dup} already queued` : ''}.`)
     onAdded()
@@ -339,6 +344,24 @@ function AddKeywords({ onAdded }: { onAdded: () => void }) {
               <label className="flex flex-col gap-1 text-xs text-neutral-500">Country
                 <Input className="w-44" placeholder="e.g. Italy" value={country}
                   onChange={(e) => setCountry(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') generate() }} />
+              </label>
+            )}
+            {target === 'clubs' && (
+              <label className="flex flex-col gap-1 text-xs text-neutral-500">Breadth
+                <div className="inline-flex rounded-md border border-neutral-200 p-0.5">
+                  {(['specific', 'broad'] as const).map((b) => (
+                    <button key={b} type="button" onClick={() => { setBreadth(b); setCandidates(null) }}
+                      className={`rounded px-2 py-1 text-xs ${breadth === b ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-100'}`}>
+                      {b === 'specific' ? 'Per-city' : 'Broad'}
+                    </button>
+                  ))}
+                </div>
+              </label>
+            )}
+            {target === 'clubs' && breadth === 'broad' && (
+              <label className="flex flex-col gap-1 text-xs text-neutral-500">Focus <span className="text-neutral-400">(optional)</span>
+                <Input className="w-44" placeholder="e.g. youth clubs, beach" value={focus}
+                  onChange={(e) => setFocus(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') generate() }} />
               </label>
             )}
             <label className="flex flex-col gap-1 text-xs text-neutral-500">Count

@@ -156,6 +156,7 @@ export interface SearchKeyword {
   new_clubs: number
   dup_count: number
   attempts: number
+  pages: number
   notes: string
   created: string
   updated: string

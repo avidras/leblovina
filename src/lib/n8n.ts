@@ -133,7 +133,7 @@ export async function triggerScrapeEnqueue(
 // then runs them. See specs/search-led-discovery.md ("Generalization v2").
 // Response body: { target, country, count, candidates: [{ keyword, lang }] }.
 export async function triggerSearchKeywordsGenerate(
-  opts: { target?: 'clubs' | 'tournaments'; country?: string; cities?: string[]; count?: number },
+  opts: { target?: 'clubs' | 'tournaments'; country?: string; cities?: string[]; count?: number; breadth?: 'specific' | 'broad'; focus?: string },
 ): Promise<TriggerResult> {
   if (!SEARCH_KEYWORDS_URL) {
     return { ok: false, status: 0, error: 'VITE_N8N_SEARCH_KEYWORDS_URL is not set' }
