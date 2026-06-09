@@ -11,7 +11,8 @@ import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { DiscoveryPage } from '@/features/discovery/DiscoveryPage'
 import { TournamentsPage } from '@/features/tournaments/TournamentsPage'
 
-const VIEWS = ['dashboard', 'federations', 'clubs', 'contacts', 'discovery', 'tournaments'] as const
+// `contacts` is intentionally last — it's the deliverable (accented in the nav).
+const VIEWS = ['dashboard', 'federations', 'clubs', 'discovery', 'tournaments', 'contacts'] as const
 type View = (typeof VIEWS)[number]
 
 // The current view lives in the URL path (`/federations`, `/clubs`) so it
@@ -140,7 +141,7 @@ function MainNav({ view, navigate, className = '', vertical = false }: { view: V
   return (
     <nav className={`${vertical ? 'flex flex-col gap-1' : 'flex gap-1'} ${className}`}>
       {VIEWS.map((v) => (
-        <NavButton key={v} active={view === v} count={totals[v]} onClick={() => navigate(v)}>
+        <NavButton key={v} active={view === v} count={totals[v]} accent={v === 'contacts'} onClick={() => navigate(v)}>
           {VIEW_LABELS[v]}
         </NavButton>
       ))}
@@ -148,23 +149,21 @@ function MainNav({ view, navigate, className = '', vertical = false }: { view: V
   )
 }
 
-function NavButton({ active, onClick, count, children }: { active: boolean; onClick: () => void; count?: number | null; children: React.ReactNode }) {
+function NavButton({ active, onClick, count, accent, children }: { active: boolean; onClick: () => void; count?: number | null; accent?: boolean; children: React.ReactNode }) {
+  const tone = active
+    ? (accent ? 'bg-emerald-600 text-white' : 'bg-neutral-900 text-white')
+    : (accent ? 'text-emerald-700 hover:bg-emerald-50' : 'text-neutral-600 hover:bg-neutral-100')
+  const chipTone = active
+    ? 'bg-white/20 text-white'
+    : (accent ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-200 text-neutral-600')
   return (
     <button
       onClick={onClick}
-      className={
-        'inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium ' +
-        (active ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-100')
-      }
+      className={'inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium ' + tone}
     >
       {children}
       {count != null && (
-        <span
-          className={
-            'ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums ' +
-            (active ? 'bg-white/20 text-white' : 'bg-neutral-200 text-neutral-600')
-          }
-        >
+        <span className={'ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums ' + chipTone}>
           {count.toLocaleString()}
         </span>
       )}
