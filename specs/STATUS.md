@@ -253,18 +253,23 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > **clubs.tournament** relation; `website_source += tournament`. `pb.ts`: `Tournament`,
 > `Club.tournament`, `WebsiteSource += tournament`. Workflow **`tournament-process`**
 > (`UqyMR8PLNybhPuS7` | `/webhook/tournament-process`): Serper(name) → pick site → **Firecrawl**
-> render homepage → find participants link → **Firecrawl** render participants page → Haiku
-> extract teams (drops national teams/country/select squads) → create club per team (federation
-> empty, `tournament` set, `needs_review`, `dedup_key='tournament:<tid>:<uslug>'`) → fire
+> render homepage → **Plan pages** (rank participant pages by URL path; reject root; build
+> DataProject `CompetitionTeamSearch.aspx?ID=<n>`; **union up to 8 same-host team pages**) →
+> **Firecrawl + Haiku extract EACH page** (HTTP nodes map over the N pages) → union/dedupe teams
+> (drops national teams/country/select squads) → create club per team (federation empty,
+> `tournament` set, `needs_review`, `dedup_key='tournament:<tid>:<uslug>'`) → fire
 > `batch-enrich` (resolve websites) + `scrape-enqueue` (contacts) → upsert tournament entity +
 > write back keyword counts. `search-discover-drain` now **routes by `keyword.target`** (fires
 > `tournament-process` for tournaments, else `search-keyword-process`). UI: tournaments enabled in
 > the Add picker; new **Tournaments** nav view; Clubs Source filter += "Discovered via tournament"
 > (keys on the relation); dashboard "Tournaments" row. Generator script: `scripts/gen_tournament_process.py`.
-> **Validated:** "Italian SuperLega" → 8 real clubs, 6 auto-resolved to A-confidence sites.
-> **Provenance = the `tournament` relation** (resolve flips website_source→serper). **Gap:** bespoke
-> SPAs (CEV) / no discoverable participants link → 0 (`no_participants`/`needs_review`); tune the
-> link-finder against real tournament names.
+> **v2 validated (2026-06-09):** Bundesliga → 77 clubs (all tiers, M+F), MEVZA (DataProject) →
+> 50, SuperLega → 12. v1 bug fixed: homepage no longer beats real team pages (path-scored), 13k
+> truncation removed (trim-to-first-H1 + 45k budget), and `pathOf` uses string ops not `new URL`
+> (which throws in the n8n Code sandbox). Tournament `name` = the keyword (multi-league unions have
+> no single title). **Provenance = the `tournament` relation** (resolve flips website_source→serper).
+> **Gap:** bespoke pro SPAs (CEV Champions League) with no discoverable team-list URL → 0
+> (`no_participants`/`needs_review`).
 
 > **Discovery v2 — target-driven engine (2026-06-08):** Generalized the discovery queue from a
 > single hardcoded club flow into a keyword engine where each keyword carries a `target` (which

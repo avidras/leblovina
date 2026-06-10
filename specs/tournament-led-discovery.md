@@ -12,6 +12,62 @@
 > homepages without a discoverable participants link still yield 0 → `no_participants`/`needs_review`
 > (tune the participant-link finder against real targets — spec Phase 2).
 >
+> **v2 (2026-06-09) — multi-page roster extraction.** The v1 processor only ever scraped **one**
+> participants page, picked the **bare homepage** as that page (a Serper result whose snippet
+> merely mentioned "Mannschaften"/"teams" outranked the real team-list URLs), and truncated the
+> page markdown to 13k chars — so league portals like the **Volleyball Bundesliga** (team list
+> begins ~15k chars in, after a 15k nav mega-menu) and **MEVZA** (a DataProject portal whose teams
+> live on a `CompetitionTeamSearch.aspx` route, not the homepage) extracted **0 clubs**. v2 fixes
+> all three and goes wide per the agreed decisions below:
+> - **Participant-page selection** scores candidate URLs by their **last path segment**, not Serper
+>   rank or snippet. Strong team-list basenames (`mannschaft`, `teams`/`teamsearch`, `squadre`,
+>   `equipos`, `deelnemers`, `participant`, `vereine`, `druzyn`, `iscritte`, `startlist`, …) win;
+>   player/news/standings/schedule/arena/archive basenames and **root/homepage URLs** are rejected.
+> - **Multi-page union (decision: "all team pages on host").** Up to **8** distinct same-host
+>   team-list pages are scraped and their teams **unioned** (idempotent via `dedup_key`), so all
+>   tiers/divisions/genders of a league portal are captured in one run (VBL → 1./2. Bundesliga ×
+>   M/F × Nord/Süd).
+> - **Platform routing (decision: reuse platform extractors).** DataProject links found on the
+>   homepage (`*.dataproject.com/Competition*.aspx?…ID=<n>`) are turned into canonical
+>   `CompetitionTeamSearch.aspx?ID=<n>` participant URLs (one per distinct competition ID → men +
+>   women). Extraction stays **uniform** (Firecrawl→LLM per page) because Firecrawl renders the
+>   DataProject team-search page cleanly (~3k chars, `#### TeamName (CC)`) — so platform handling is
+>   only **URL construction**, not a separate extractor.
+> - **Truncation fixed.** Each page is trimmed to its first `# ` H1 (drops the leading nav block)
+>   then sent to the LLM at up to **45k** chars (was 13k), so nav-heavy team pages keep their full
+>   roster. DataProject pages are small and unaffected.
+> - **Graph.** `Find participants` → **`Plan pages`** (ranked, capped, ≥1 fallback to homepage);
+>   `Firecrawl Participants`/`Extract` now **map over the N planned pages** (one Firecrawl + one LLM
+>   call each, `onError: continueRegularOutput`); `Bundle` is removed; **`Create`** reads
+>   `$('Extract').all()`, unions + dedupes teams, then creates clubs + resolve/enqueue as before.
+> - Validated: VBL → all-tier roster; MEVZA → DataProject men+women. Remaining known gap unchanged:
+>   bespoke pro SPAs (CEV Champions League) with no discoverable team-list URL → `needs_review`.
+>
+> **v2.1 (2026-06-09) — creation-time dedup guard (overrides decision #3's "always create").**
+> Pro-league tournaments mostly re-discover clubs we already hold from the federation route (~24+
+> exact-name Bundesliga↔DVV overlaps), and the keep-each-team design left those as duplicate
+> records. `Create` now checks for a likely-existing club **before** inserting and **does not create
+> a duplicate** (agreed via questionnaire):
+> - **Match rule: normalized name + same country.** Normalize = lowercase, strip diacritics
+>   (NFD + combining-mark removal, so `USC MÜNSTER` == `USC Munster`), non-alphanumerics → space,
+>   collapse. Conservative on purpose: sponsor-variant names (`BERLIN RECYCLING Volleys` vs
+>   `BR Volleys`) deliberately do **not** match and are still created — those stay for manual Merge.
+>   Country must match (teams without a country fall through and are created).
+> - **On match: enrich the existing club, keep its route.** Skip the insert; backfill only
+>   `website_url` if the existing club has none (from a participant-row link). Do **not** change its
+>   `federation`/`tournament` relation or `website_source` — so a federation club is **not** moved
+>   into the Tournaments dashboard group. Counted as `merged`, not `created`.
+> - **Lookup** is one paged fetch per distinct team-country into an in-memory `norm(name)→club` map
+>   (Germany ≈ 490 clubs, cheap); clubs created earlier in the same run are added to the map so a
+>   tournament can't dup itself within one run either. This also makes **cross-tournament** dedup
+>   fall out for free (same name+country in two tournaments → second one merges).
+> - **Scope: tournament route only.** The Google/search route already dedups (by website host in
+>   `search-keyword-process`); tournament clubs usually have no site at creation, so host-dedup
+>   doesn't help them — hence the name+country guard here.
+> - `status` is `extracted` whenever any club was kept (created **or** merged); tournament `notes`
+>   records `created`/`merged`/`pages`. Only genuinely-created clubs go to `batch-enrich` +
+>   `scrape-enqueue`.
+>
 > **Driven by the unified discovery engine.** Per `search-led-discovery.md`'s "Generalization
 > (v2)", tournament discovery is `target='tournaments'` in the shared `search_keywords` queue —
 > the keyword (a tournament name) is added manually or via the opt-in generator, the shared drain
