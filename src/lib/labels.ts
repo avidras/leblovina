@@ -81,6 +81,7 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   directory: 'Directory',
   club_site: 'Club site',
   manual: 'Manual',
+  brevo: 'Brevo',
 }
 export const sourceTypeLabel = (s: string | null | undefined) => lookup(SOURCE_TYPE_LABELS, s)
 

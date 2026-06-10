@@ -9,6 +9,9 @@ interface ImportMetaEnv {
   readonly VITE_N8N_BATCH_ENRICH_URL?: string
   readonly VITE_N8N_ENGLISHIZE_CLUBS_URL?: string
   readonly VITE_N8N_SITE_SCRAPE_URL?: string
+  readonly VITE_N8N_VERIFY_CONTACTS_URL?: string
+  readonly VITE_N8N_SYNC_BREVO_URL?: string
+  readonly VITE_N8N_BREVO_BACKFILL_URL?: string
 }
 
 interface ImportMeta {

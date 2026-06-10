@@ -16,6 +16,7 @@ import { Pagination } from '@/components/ui/pagination'
 import { withFlag } from '@/lib/countries'
 import { relTime, exactTime } from '@/lib/time'
 import { downloadCsv } from '@/lib/csv'
+import { triggerVerifyContacts, triggerBrevoSync, triggerBrevoBackfill, type TriggerResult } from '@/lib/n8n'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 import { ClubDetailDialog } from '@/features/clubs/ClubsPage'
 
@@ -63,8 +64,8 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
   const [perPage, setPerPage] = useState(100)
   const [openId, setOpenId] = useState<string | null>(null)
   const [openClub, setOpenClub] = useState<Club | null>(null)
-  const [exportMsg, setExportMsg] = useState<string | null>(null)
-  const [exportBusy, setExportBusy] = useState(false)
+  const [actionMsg, setActionMsg] = useState<string | null>(null)
+  const [actionBusy, setActionBusy] = useState(false)
   const countries = useCountries('contacts')
   const resetPage = () => setPage(1)
   const filtersActive = [q, club, countryF, vsFilter, srcFilter].some(Boolean)
@@ -79,7 +80,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
     [club, countryF, vsFilter, srcFilter, debouncedQ],
   )
   const sortStr = `${sort.dir === 'asc' ? '+' : '-'}${SORT_FIELD[sort.key]}`
-  const { items, totalItems, totalPages, loading, error } = usePagedCollection<Contact>('contacts', {
+  const { items, totalItems, totalPages, loading, error, reload } = usePagedCollection<Contact>('contacts', {
     page, perPage, sort: sortStr, filter, expand: 'club',
   })
 
@@ -88,8 +89,8 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
 
   // Export the CURRENT filtered view (all rows), all columns, as CSV.
   async function exportCsv() {
-    setExportBusy(true)
-    setExportMsg('Preparing export…')
+    setActionBusy(true)
+    setActionMsg('Preparing export…')
     try {
       const list = await pb.collection('contacts').getFullList<Contact>({ filter: filter || undefined, sort: sortStr, expand: 'club', batch: 500 })
       const rows = list.map((c) => ({
@@ -102,11 +103,58 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
         source_url: c.source_url, notes: c.notes, created: c.created,
       }))
       downloadCsv(`contacts-${new Date().toISOString().slice(0, 10)}.csv`, rows as unknown as Record<string, unknown>[])
-      setExportMsg(`Exported ${rows.length} contact(s).`)
+      setActionMsg(`Exported ${rows.length} contact(s).`)
     } catch (e) {
-      setExportMsg(`Export failed: ${(e as Error).message}`)
+      setActionMsg(`Export failed: ${(e as Error).message}`)
     }
-    setExportBusy(false)
+    setActionBusy(false)
+  }
+
+  // Shared runner for the n8n-triggered actions (verify / sync / backfill): show a pending
+  // message, fire the webhook, surface n8n's response (or error) verbatim.
+  async function runAction(pending: string, fn: () => Promise<TriggerResult>) {
+    setActionBusy(true)
+    setActionMsg(pending)
+    const r = await fn()
+    if (r.ok) {
+      const detail = r.body ? ` ${JSON.stringify(r.body)}` : ''
+      setActionMsg(`Done.${detail}`)
+    } else {
+      setActionMsg(`Failed (${r.status || 'network'}): ${r.error ?? 'see n8n execution log'}`)
+    }
+    setActionBusy(false)
+  }
+
+  // Reoon verification over the CURRENT filter (cost control: scope it before running).
+  function verifyEmails() {
+    if (!window.confirm(`Verify the ${totalItems.toLocaleString()} contact(s) in the current filter via Reoon? This spends verification credits (skips anything verified recently).`)) return
+    runAction('Verifying emails via Reoon…', () => triggerVerifyContacts({ filter: filter || undefined }))
+  }
+
+  // Push ALL proven-deliverable (verified) contacts to Brevo — ignores the on-screen filter
+  // by design (the deliverability gate, not the view, decides who is sent).
+  function syncToBrevo() {
+    if (!window.confirm('Push all proven-deliverable (verified) contacts to the Brevo list? Only contacts Reoon marked "verified" are sent; existing Brevo contacts are updated.')) return
+    runAction('Syncing verified contacts to Brevo…', () => triggerBrevoSync())
+  }
+
+  // One-time import of contacts already in Brevo (email only, source=Brevo). Idempotent.
+  function backfillFromBrevo() {
+    if (!window.confirm('Import contacts that already exist in Brevo into this database (as source "Brevo", email only)? Safe to re-run — existing emails are skipped.')) return
+    runAction('Importing contacts from Brevo…', () => triggerBrevoBackfill())
+  }
+
+  // Delete a contact here; the PocketBase delete hook hard-deletes it in Brevo too.
+  async function deleteContact(c: Contact) {
+    if (!window.confirm(`Delete ${c.email}? This also removes it from Brevo.`)) return
+    try {
+      await pb.collection('contacts').delete(c.id)
+      setOpenId(null)
+      setActionMsg(`Deleted ${c.email}. It will be removed from Brevo too.`)
+      reload()
+    } catch (e) {
+      setActionMsg(`Delete failed: ${(e as Error).message}`)
+    }
   }
 
   // when arriving via a club drill-down, show the club's name in the chip
@@ -158,18 +206,37 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
         <ResetFiltersButton active={filtersActive} onReset={resetFilters} />
         <span className="ml-auto text-sm text-neutral-500">{totalItems.toLocaleString()} contacts{loading ? ' · loading…' : ''}</span>
         <ActionsMenu
-          busy={exportBusy}
+          busy={actionBusy}
           actions={[{
             key: 'export',
             label: 'Export CSV (filtered)',
             count: totalItems,
             description: 'Download every contact in the current filter (all rows, all columns) as a CSV.',
-            disabled: exportBusy || totalItems === 0,
+            disabled: actionBusy || totalItems === 0,
             onSelect: exportCsv,
+          }, {
+            key: 'verify',
+            label: 'Verify emails (Reoon)',
+            count: totalItems,
+            description: 'Check deliverability of the contacts in the current filter via Reoon; writes verification status. Spends credits; skips recently-verified.',
+            disabled: actionBusy || totalItems === 0,
+            onSelect: verifyEmails,
+          }, {
+            key: 'sync-brevo',
+            label: 'Sync deliverable to Brevo',
+            description: 'Push ALL proven-deliverable (verified) contacts to the Brevo newsletter list, updating existing ones. Ignores the on-screen filter by design.',
+            disabled: actionBusy,
+            onSelect: syncToBrevo,
+          }, {
+            key: 'backfill-brevo',
+            label: 'Import from Brevo (backfill)',
+            description: 'One-time: import contacts already in Brevo into this DB as source "Brevo" (email only). Idempotent — safe to re-run.',
+            disabled: actionBusy,
+            onSelect: backfillFromBrevo,
           }]}
         />
       </div>
-      {exportMsg && <div className="text-sm text-neutral-600">{exportMsg}</div>}
+      {actionMsg && <div className="text-sm text-neutral-600">{actionMsg}</div>}
 
       {totalItems === 0 && !loading ? (
         <div className="rounded-lg border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-500">
@@ -244,6 +311,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
       <ContactDetailDialog
         contact={items.find((c) => c.id === openId) ?? null}
         onClose={() => setOpenId(null)}
+        onDelete={deleteContact}
       />
       <ClubDetailDialog
         club={openClub}
@@ -254,7 +322,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
   )
 }
 
-function ContactDetailDialog({ contact, onClose }: { contact: Contact | null; onClose: () => void }) {
+function ContactDetailDialog({ contact, onClose, onDelete }: { contact: Contact | null; onClose: () => void; onDelete: (c: Contact) => void }) {
   const club = contact?.expand?.club
   return (
     <Dialog
@@ -306,6 +374,17 @@ function ContactDetailDialog({ contact, onClose }: { contact: Contact | null; on
                 <dd className="mt-1 whitespace-pre-wrap text-sm text-neutral-900">{contact.notes}</dd>
               </div>
             )}
+          </section>
+
+          <section className="flex justify-end border-t border-neutral-100 pt-4">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
+              onClick={() => onDelete(contact)}
+              title="Delete this contact here and in Brevo"
+            >
+              Delete contact
+            </button>
           </section>
         </div>
       )}

@@ -200,9 +200,10 @@ export const VERIFICATION_STATUSES: VerificationStatus[] = [
   'unverified', 'mx_only', 'verified', 'catch_all', 'undeliverable', 'unknown',
 ]
 
-// Provenance: federation directory vs the club's own site (Phase 3) vs manual.
-export type ContactSourceType = 'directory' | 'club_site' | 'manual'
-export const CONTACT_SOURCE_TYPES: ContactSourceType[] = ['directory', 'club_site', 'manual']
+// Provenance: federation directory vs the club's own site (Phase 3) vs manual vs
+// imported from Brevo (email-only, no club — see specs/brevo-reoon-integration.md).
+export type ContactSourceType = 'directory' | 'club_site' | 'manual' | 'brevo'
+export const CONTACT_SOURCE_TYPES: ContactSourceType[] = ['directory', 'club_site', 'manual', 'brevo']
 
 // Mirrors the `contacts` collection schema. clubs 1:N contacts.
 export interface Contact {

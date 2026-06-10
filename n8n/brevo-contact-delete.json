@@ -1,0 +1,50 @@
+{
+  "name": "Leblovina — Brevo contact delete",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "brevo-contact-delete", "responseMode": "lastNode", "options": {} },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-400, 0],
+      "webhookId": "brevo-contact-delete"
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=https://api.brevo.com/v3/contacts/{{ encodeURIComponent(($('Webhook').item.json.body || {}).email || '') }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "del",
+      "name": "Brevo delete",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-200, 0],
+      "onError": "continueRegularOutput",
+      "credentials": { "httpHeaderAuth": { "id": "REPLACE_BREVO_CRED", "name": "Brevo (api)" } }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const email=(($('Webhook').first().json.body)||{}).email||'';\n// 404 (already gone) is treated as success — the contact is absent from Brevo either way.\nreturn [{json:{deleted:email}}];\n"
+      },
+      "id": "done",
+      "name": "Done",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 0]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Brevo delete", "type": "main", "index": 0 }]] },
+    "Brevo delete": { "main": [[{ "node": "Done", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false,
+  "pinData": {},
+  "meta": { "templateId": "leblovina-brevo-contact-delete" }
+}

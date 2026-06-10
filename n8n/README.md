@@ -4,6 +4,35 @@ Importable n8n workflow exports, version-controlled for reproducibility. The **r
 source of truth is n8n; these JSON files are the committed copy. **No secrets live here** —
 the PocketBase admin login is an n8n **credential**, configured in the n8n UI.
 
+## Phase 4 — Brevo sync + Reoon verification
+
+Four workflows; design in [`specs/brevo-reoon-integration.md`](../specs/brevo-reoon-integration.md).
+All follow the house pattern (**Webhook → Config → PB Auth → Code/HTTP**); Brevo and Reoon are
+called from **credentialed HTTP Request nodes** (Code nodes can't read credentials).
+
+- `verify-contacts-reoon.json` — `/webhook/verify-contacts-reoon`. Manual "Verify emails" button.
+  Picks unverified/stale contacts (respects `settings.reoon.reverify_days`), verifies each via
+  Reoon, writes `verification_status` + `verified_at`.
+- `sync-contacts-brevo.json` — `/webhook/sync-contacts-brevo`. Manual "Sync deliverable to Brevo"
+  button. Pushes only `verification_status='verified'` contacts (the deliverability gate) into the
+  Brevo list `settings.brevo.list_id`, upserting attributes NAME/CLUB/COUNTRY/QUALITY.
+- `brevo-contact-delete.json` — `/webhook/brevo-contact-delete`. Fired by the PocketBase
+  `pb_hooks/brevo_contact_delete.pb.js` delete hook (not a UI button); hard-deletes the email in
+  Brevo (404 tolerated).
+- `brevo-backfill.json` — `/webhook/brevo-backfill`. One-time import of contacts already in Brevo
+  into PB as `source_type='brevo'` (email only, no club). Idempotent on the `email` unique index.
+
+### One-time setup (credentials — never committed)
+1. **`Brevo (api)`** — n8n → Credentials → New → **Header Auth**, header **`api-key`** = your
+   Brevo v3 API key. Re-select it on every Brevo HTTP node after import (the committed exports use
+   the placeholder id `REPLACE_BREVO_CRED`).
+2. **`Reoon (api)`** — New → **Query Auth**, param **`key`** = your Reoon API key. Re-select it on
+   the `Reoon verify` node (placeholder id `REPLACE_REOON_CRED`).
+3. Set **`settings.brevo.list_id`** (PB admin) to your Brevo newsletter list's numeric id.
+4. The PB superuser credential is the existing `PocketBase admin (api)` (already wired by id).
+5. Copy each production webhook URL into the matching `VITE_N8N_*` env var (see `.env.example`);
+   the UI also falls back to `https://n8n-2.biceps.digital/webhook/<path>` if unset.
+
 ## `scrape-federations.json` — Phase 1 federations ingest
 
 Webhook-triggered workflow that pulls the FIVB national federations from the VIS XML API and

@@ -1,0 +1,92 @@
+{
+  "name": "Leblovina — Verify contacts (Reoon)",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "verify-contacts-reoon", "responseMode": "lastNode", "options": {} },
+      "id": "wh",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-720, 0],
+      "webhookId": "verify-contacts-reoon"
+    },
+    {
+      "parameters": {
+        "assignments": { "assignments": [
+          { "id": "p", "name": "pbUrl", "value": "https://leblovina.tools.biceps.digital", "type": "string" }
+        ] },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-560, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "auth",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-400, 0],
+      "credentials": { "httpCustomAuth": { "id": "hzdBwrAqrPZjDmME", "name": "PocketBase admin (api)" } }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst body=($('Webhook').first().json.body)||{};\nconst force = body.force === true;\nlet mode='power', reverifyDays=90;\ntry{ const s=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/settings/records',qs:{filter:'key=\"reoon\"',perPage:1},headers:pbH,json:true}); const v=(s.items&&s.items[0]&&s.items[0].value)||{}; if(v.mode)mode=v.mode; if(v.reverify_days!=null)reverifyDays=v.reverify_days; }catch(e){}\nconst cutoffMs = Date.now() - (reverifyDays*86400000);\nlet contacts=[];\nif(Array.isArray(body.ids) && body.ids.length){\n  for(const id of body.ids){ try{ const c=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records/'+id,headers:pbH,json:true}); contacts.push(c); }catch(e){} }\n} else {\n  const filter=body.filter||''; let page=1;\n  while(true){ const qs=Object.assign({perPage:500,page},filter?{filter}:{}); const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs,headers:pbH,json:true}); contacts=contacts.concat(r.items||[]); if(page>=(r.totalPages||1))break; page++; }\n}\nconst out=[]; const seen=new Set();\nfor(const c of contacts){ if(!c.email||seen.has(c.email)) continue; const vAt=c.verified_at? new Date(String(c.verified_at).replace(' ','T')).getTime():0; if(!force && vAt && vAt>cutoffMs) continue; seen.add(c.email); out.push({json:{id:c.id,email:c.email,mode}}); }\nreturn out;\n"
+      },
+      "id": "pick",
+      "name": "Pick contacts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-220, 0]
+    },
+    {
+      "parameters": {
+        "url": "=https://emailverifier.reoon.com/api/v1/verify?email={{ encodeURIComponent($json.email) }}&mode={{ $json.mode }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "options": {}
+      },
+      "id": "reoon",
+      "name": "Reoon verify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-20, 0],
+      "onError": "continueRegularOutput",
+      "credentials": { "httpQueryAuth": { "id": "REPLACE_REOON_CRED", "name": "Reoon (api)" } }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst picks=$('Pick contacts').all();\nconst results=$input.all();\nconst now=new Date().toISOString();\nfunction mapStatus(s){ s=(s||'').toString().toLowerCase();\n  if(s==='safe'||s==='role_account') return 'verified';\n  if(s==='catch_all') return 'catch_all';\n  if(['invalid','disabled','disposable','spamtrap','inbox_full','undeliverable'].includes(s)) return 'undeliverable';\n  return 'unknown'; }\nconst counts={verified:0,undeliverable:0,catch_all:0,unknown:0};\nfor(let i=0;i<picks.length;i++){\n  const id=picks[i].json.id;\n  const r=(results[i]&&results[i].json)||{};\n  const vs=mapStatus(r.status);\n  counts[vs]=(counts[vs]||0)+1;\n  try{ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/contacts/records/'+id,headers:pbH,body:{verification_status:vs,verified_at:now},json:true}); }catch(e){}\n}\ntry{ const s=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/settings/records',qs:{filter:'key=\"reoon\"',perPage:1},headers:pbH,json:true}); const rec=s.items&&s.items[0]; if(rec){ const v=rec.value||{}; v.last_run=now; await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/settings/records/'+rec.id,headers:pbH,body:{value:v},json:true}); } }catch(e){}\nreturn [{json:{verified:counts.verified,undeliverable:counts.undeliverable,catch_all:counts.catch_all,unknown:counts.unknown,total:picks.length}}];\n"
+      },
+      "id": "write",
+      "name": "Write back",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [200, 0]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "PB Auth", "type": "main", "index": 0 }]] },
+    "PB Auth": { "main": [[{ "node": "Pick contacts", "type": "main", "index": 0 }]] },
+    "Pick contacts": { "main": [[{ "node": "Reoon verify", "type": "main", "index": 0 }]] },
+    "Reoon verify": { "main": [[{ "node": "Write back", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false,
+  "pinData": {},
+  "meta": { "templateId": "leblovina-verify-contacts-reoon" }
+}

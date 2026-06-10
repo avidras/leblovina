@@ -17,6 +17,9 @@ const ENGLISHIZE_CLUBS_URL = wh(import.meta.env.VITE_N8N_ENGLISHIZE_CLUBS_URL, '
 const SCRAPE_ENQUEUE_URL = wh(import.meta.env.VITE_N8N_SCRAPE_ENQUEUE_URL, 'scrape-enqueue')
 const SITE_SCRAPE_URL = wh(import.meta.env.VITE_N8N_SITE_SCRAPE_URL, 'site-scrape-driver')
 const SEARCH_KEYWORDS_URL = wh(import.meta.env.VITE_N8N_SEARCH_KEYWORDS_URL, 'search-keywords-generate')
+const VERIFY_CONTACTS_URL = wh(import.meta.env.VITE_N8N_VERIFY_CONTACTS_URL, 'verify-contacts-reoon')
+const SYNC_BREVO_URL = wh(import.meta.env.VITE_N8N_SYNC_BREVO_URL, 'sync-contacts-brevo')
+const BREVO_BACKFILL_URL = wh(import.meta.env.VITE_N8N_BREVO_BACKFILL_URL, 'brevo-backfill')
 
 export interface TriggerResult {
   ok: boolean
@@ -139,4 +142,38 @@ export async function triggerSearchKeywordsGenerate(
     return { ok: false, status: 0, error: 'VITE_N8N_SEARCH_KEYWORDS_URL is not set' }
   }
   return postWebhook(SEARCH_KEYWORDS_URL, { target: 'clubs', ...opts })
+}
+
+// Reoon email verification (manual, batch). Verifies the contacts in the current filter
+// (or all when omitted), writing verification_status + verified_at back on each. Skips
+// anything verified within settings.reoon.reverify_days unless force=true. Reoon bills per
+// email — this is an explicit, user-triggered action. See specs/brevo-reoon-integration.md.
+export async function triggerVerifyContacts(
+  opts: { filter?: string; ids?: string[]; force?: boolean } = {},
+): Promise<TriggerResult> {
+  if (!VERIFY_CONTACTS_URL) {
+    return { ok: false, status: 0, error: 'VITE_N8N_VERIFY_CONTACTS_URL is not set' }
+  }
+  return postWebhook(VERIFY_CONTACTS_URL, opts)
+}
+
+// Push our proven-deliverable contacts (verification_status='verified') into the Brevo
+// newsletter list (settings.brevo.list_id), upserting attributes. Re-runs update existing
+// Brevo contacts. Pass `filter` to scope; omit to sync all verified. The deliverability gate
+// is enforced server-side regardless. See specs/brevo-reoon-integration.md.
+export async function triggerBrevoSync(opts: { filter?: string } = {}): Promise<TriggerResult> {
+  if (!SYNC_BREVO_URL) {
+    return { ok: false, status: 0, error: 'VITE_N8N_SYNC_BREVO_URL is not set' }
+  }
+  return postWebhook(SYNC_BREVO_URL, opts)
+}
+
+// One-time backfill: import contacts that already exist in Brevo into our DB as
+// source_type='brevo' (email only, no club). Idempotent on the email unique index — safe to
+// re-run. See specs/brevo-reoon-integration.md.
+export async function triggerBrevoBackfill(opts: { list_id?: number } = {}): Promise<TriggerResult> {
+  if (!BREVO_BACKFILL_URL) {
+    return { ok: false, status: 0, error: 'VITE_N8N_BREVO_BACKFILL_URL is not set' }
+  }
+  return postWebhook(BREVO_BACKFILL_URL, opts)
 }

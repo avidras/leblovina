@@ -12,6 +12,20 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > batches + a driver). Then Phase 3 (Europe-wide run + count QA), 4 (Apify/platform), 5 (site scraper).
 > New workflow id: extract-club-contacts `wbiJdurHtKbbQtye`.
 >
+> **Phase 4 — Brevo sync + Reoon verification (built 2026-06-10; NOT yet live):** Spec
+> `specs/brevo-reoon-integration.md`. Code/schema/UI/workflows all committed; deploy is **blocked
+> on three secrets the user must provide**. Decisions: Reoon verify = manual button; Brevo gate =
+> only `verification_status='verified'` (proven-deliverable); Brevo delete = hard-delete via PB
+> hook; attrs NAME/CLUB/COUNTRY/QUALITY; backfill imports Brevo→PB as `source_type='brevo'`
+> (email-only, no club). Built: migration `1780656100_brevo_reoon.js` (club→optional, source_type
+> +`brevo`, seeds `settings.brevo`/`settings.reoon`); hook `pb_hooks/brevo_contact_delete.pb.js`;
+> 4 workflows (`verify-contacts-reoon`, `sync-contacts-brevo`, `brevo-contact-delete`,
+> `brevo-backfill`) with placeholder cred ids `REPLACE_BREVO_CRED`/`REPLACE_REOON_CRED`; UI actions
+> on the Contacts page + in-dialog delete. **To go live:** (1) n8n cred `Brevo (api)` (Header Auth
+> `api-key`); (2) n8n cred `Reoon (api)` (Query Auth `key`); (3) set `settings.brevo.list_id`; then
+> PUT the 4 workflows live (swap placeholder cred ids), and smoke-test verify→sync→delete→backfill.
+> Migration + hook auto-apply on the next prod deploy (no manual step).
+>
 > **Phase 3 round 1 done (2026-06-06 late):** Europe-wide run + count-QA + extractor revision.
 > Fixed: async extractors (60s code-timeout), discovery `maxIterations` 7→18 (recovered GER/ESP),
 > `js`→Firecrawl-render routing (recovered SLO/SRB/SCO), federated extractor v1 (`extract-clubs-
