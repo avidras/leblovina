@@ -93,7 +93,7 @@ export function TournamentsPage({ onOpenClubs }: { onOpenClubs?: () => void } = 
             <TH sortable sorted={sortedOf('name')} onClick={() => toggleSort('name')} className="w-[320px] min-w-[260px]">Tournament</TH>
             <TH sortable sorted={sortedOf('country')} onClick={() => toggleSort('country')}>Country</TH>
             <TH sortable sorted={sortedOf('status')} onClick={() => toggleSort('status')}>Status</TH>
-            <TH sortable sorted={sortedOf('clubs_found')} onClick={() => toggleSort('clubs_found')} className="text-right">Clubs</TH>
+            <TH sortable sorted={sortedOf('participants_count')} onClick={() => toggleSort('participants_count')} className="text-right" title="Clubs/teams listed by this tournament across all pages (top number). Below: 'new' = created on the last run; 'dup' = already existed and were deduplicated (merged into existing/federation-route clubs).">Clubs</TH>
             <TH sortable sorted={sortedOf('platform')} onClick={() => toggleSort('platform')}>Platform</TH>
             <TH>Pages</TH>
             <TH sortable sorted={sortedOf('last_run')} onClick={() => toggleSort('last_run')}>Last run</TH>
@@ -108,7 +108,14 @@ export function TournamentsPage({ onOpenClubs }: { onOpenClubs?: () => void } = 
               </TD>
               <TD>{t.country || '—'}</TD>
               <TD><Badge tone={statusTone(t.status)}>{t.status || '—'}</Badge></TD>
-              <TD className="text-right tabular-nums font-medium text-neutral-800">{t.clubs_found || 0}</TD>
+              <TD className="text-right tabular-nums font-medium text-neutral-800">
+                {t.participants_count || 0}
+                {(t.participants_count || 0) > 0 && (
+                  <div className="text-xs font-normal text-neutral-400">
+                    {t.clubs_found || 0} new · {Math.max(0, (t.participants_count || 0) - (t.clubs_found || 0))} dup
+                  </div>
+                )}
+              </TD>
               <TD className="text-xs text-neutral-500">{t.platform || '—'}</TD>
               <TD className="max-w-[220px] truncate text-xs">
                 {t.participants_url ? (

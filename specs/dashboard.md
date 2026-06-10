@@ -21,6 +21,20 @@ the existing queue counts.
 
 (Boxes link to the view; per-filter deep-linking is out of scope — filters now persist anyway.)
 
+## Breakdown (clubs + contacts), tabbed
+
+Below the boxes, a **Breakdown** section with a tab switch:
+- **By confederation** (default) — one row per `CONFEDERATION` (clubs→federation→confederation),
+  plus appended provenance rows for routes whose confederation is blank: **"No federation
+  (Google search and scrape)"** (`website_source='search'`) and **"Tournaments"**
+  (`tournament!=''`). Counts via parallel `getList` totals (cheap; 5 confederations).
+- **By country** — one row per country with its flag (`CountryLabel`), clubs + contacts,
+  sorted by clubs desc, scrollable. Country totals are route-agnostic (every club has a
+  `country`, so search/tournament clubs roll into their country). **Lazy**: only computed when
+  the tab is first opened. Implemented as `useCountryBreakdown` — two batched `getFullList`
+  scans (clubs `country`; contacts `expand.club.country`, the same pattern as `useCountries`,
+  ≈27k rows) tallied client-side into a `Map`. No new aggregation endpoint/field.
+
 ## How it works (client-facing copy)
 
 A numbered, plain-language walkthrough (icon + title + 1–2 sentences each), no jargon:

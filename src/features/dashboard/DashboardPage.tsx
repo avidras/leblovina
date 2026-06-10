@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { pb, CONFEDERATIONS } from '@/lib/pb'
 import { useCountries } from '@/hooks/useCountries'
+import { CountryLabel } from '@/components/ui/country'
 
 type NavView = 'federations' | 'clubs' | 'contacts'
 
@@ -51,11 +52,49 @@ function useStats(): Stats | null {
   return s
 }
 
+interface CountryRow { country: string; clubs: number; contacts: number }
+
+// Per-country clubs + contacts. Lazy: only scans (≈27k rows via batched getFullList,
+// the same pattern as useCountries) once the "By country" tab is first opened.
+function useCountryBreakdown(enabled: boolean): CountryRow[] | null {
+  const [rows, setRows] = useState<CountryRow[] | null>(null)
+  useEffect(() => {
+    if (!enabled || rows) return
+    let alive = true
+    ;(async () => {
+      try {
+        const [clubsList, contactsList] = await Promise.all([
+          pb.collection('clubs').getFullList<{ country: string }>({ fields: 'country', batch: 500 }),
+          pb.collection('contacts').getFullList<{ expand?: { club?: { country?: string } } }>({ fields: 'expand.club.country', expand: 'club', batch: 500 }),
+        ])
+        const tally = new Map<string, { clubs: number; contacts: number }>()
+        const bump = (c: string | undefined, key: 'clubs' | 'contacts') => {
+          const k = (c || '').trim()
+          if (!k) return
+          const e = tally.get(k) ?? { clubs: 0, contacts: 0 }
+          e[key]++
+          tally.set(k, e)
+        }
+        clubsList.forEach((c) => bump(c.country, 'clubs'))
+        contactsList.forEach((c) => bump(c.expand?.club?.country, 'contacts'))
+        const out = Array.from(tally.entries())
+          .map(([country, v]) => ({ country, ...v }))
+          .sort((a, b) => b.clubs - a.clubs || b.contacts - a.contacts || a.country.localeCompare(b.country))
+        if (alive) setRows(out)
+      } catch { /* non-fatal */ }
+    })()
+    return () => { alive = false }
+  }, [enabled, rows])
+  return rows
+}
+
 const fmt = (n: number | undefined) => (n == null ? '—' : n.toLocaleString())
 
 export function DashboardPage({ onNavigate }: { onNavigate: (v: NavView) => void }) {
   const s = useStats()
   const countries = useCountries()
+  const [breakdown, setBreakdown] = useState<'conf' | 'country'>('conf')
+  const byCountry = useCountryBreakdown(breakdown === 'country')
 
   const cards: { label: string; value: number | undefined; sub: string; to: NavView }[] = [
     { label: 'Federations', value: s?.feds, sub: `${fmt(s?.fedsScraped)} with clubs found`, to: 'federations' },
@@ -92,41 +131,83 @@ export function DashboardPage({ onNavigate }: { onNavigate: (v: NavView) => void
 
       {s && (
         <section>
-          <h2 className="mb-3 text-lg font-semibold text-neutral-900">By confederation</h2>
-          <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-500">
-                  <th className="px-4 py-2">Confederation</th>
-                  <th className="px-4 py-2 text-right">Clubs</th>
-                  <th className="px-4 py-2 text-right">Contacts</th>
-                </tr>
-              </thead>
-              <tbody>
-                {s.byConf.map((r) => (
-                  <tr key={r.conf} className="border-b border-neutral-100 last:border-0">
-                    <td className="px-4 py-2 font-medium text-neutral-800">{CONF_LABEL[r.conf] ?? r.conf}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{r.clubs.toLocaleString()}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{r.contacts.toLocaleString()}</td>
-                  </tr>
-                ))}
-                {s.searchClubs > 0 && (
-                  <tr className="border-b border-neutral-100 last:border-0 bg-neutral-50/60">
-                    <td className="px-4 py-2 font-medium text-neutral-800">No federation (Google search and scrape)</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{s.searchClubs.toLocaleString()}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{s.searchContacts.toLocaleString()}</td>
-                  </tr>
-                )}
-                {s.tourClubs > 0 && (
-                  <tr className="border-b border-neutral-100 last:border-0 bg-neutral-50/60">
-                    <td className="px-4 py-2 font-medium text-neutral-800">Tournaments</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{s.tourClubs.toLocaleString()}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{s.tourContacts.toLocaleString()}</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+          <div className="mb-3 flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-neutral-900">Breakdown</h2>
+            <div className="inline-flex rounded-lg border border-neutral-200 bg-neutral-50 p-0.5">
+              {([['conf', 'By confederation'], ['country', 'By country']] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setBreakdown(key)}
+                  className={
+                    'rounded-md px-3 py-1 text-sm font-medium transition ' +
+                    (breakdown === key ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-700')
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
+
+          {breakdown === 'conf' ? (
+            <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-500">
+                    <th className="px-4 py-2">Confederation</th>
+                    <th className="px-4 py-2 text-right">Clubs</th>
+                    <th className="px-4 py-2 text-right">Contacts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {s.byConf.map((r) => (
+                    <tr key={r.conf} className="border-b border-neutral-100 last:border-0">
+                      <td className="px-4 py-2 font-medium text-neutral-800">{CONF_LABEL[r.conf] ?? r.conf}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{r.clubs.toLocaleString()}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{r.contacts.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                  {s.searchClubs > 0 && (
+                    <tr className="border-b border-neutral-100 last:border-0 bg-neutral-50/60">
+                      <td className="px-4 py-2 font-medium text-neutral-800">No federation (Google search and scrape)</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{s.searchClubs.toLocaleString()}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{s.searchContacts.toLocaleString()}</td>
+                    </tr>
+                  )}
+                  {s.tourClubs > 0 && (
+                    <tr className="border-b border-neutral-100 last:border-0 bg-neutral-50/60">
+                      <td className="px-4 py-2 font-medium text-neutral-800">Tournaments</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{s.tourClubs.toLocaleString()}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{s.tourContacts.toLocaleString()}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : byCountry == null ? (
+            <div className="rounded-xl border border-neutral-200 bg-white px-4 py-8 text-center text-sm text-neutral-500">Loading per-country totals…</div>
+          ) : (
+            <div className="max-h-[28rem] overflow-y-auto rounded-xl border border-neutral-200 bg-white">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-white">
+                  <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-500">
+                    <th className="px-4 py-2">Country <span className="font-normal normal-case text-neutral-400">({byCountry.length})</span></th>
+                    <th className="px-4 py-2 text-right">Clubs</th>
+                    <th className="px-4 py-2 text-right">Contacts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byCountry.map((r) => (
+                    <tr key={r.country} className="border-b border-neutral-100 last:border-0">
+                      <td className="px-4 py-2 font-medium text-neutral-800"><CountryLabel country={r.country} /></td>
+                      <td className="px-4 py-2 text-right tabular-nums">{r.clubs.toLocaleString()}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{r.contacts.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       )}
 
