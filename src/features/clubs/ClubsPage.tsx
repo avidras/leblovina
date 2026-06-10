@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { pb, type Club, type Contact, type ScrapePage, type WebsiteConfidence, type ClubType, WEBSITE_STATUSES, WEBSITE_CONFIDENCES, CLUB_TYPES, WEBSITE_SOURCES } from '@/lib/pb'
+import { pb, sanitizeSearch, type Club, type Contact, type ScrapePage, type WebsiteConfidence, type ClubType, WEBSITE_STATUSES, WEBSITE_CONFIDENCES, CLUB_TYPES, WEBSITE_SOURCES } from '@/lib/pb'
 import { statusLabel, websiteStatusLabel, websiteSourceLabel, confidenceLabel, confidenceHelp, clubTypeLabel } from '@/lib/labels'
 import { usePagedCollection } from '@/hooks/usePagedCollection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
@@ -53,7 +53,7 @@ function buildClubsFilter(f: {
       f.src === 'via_tournament' ? "tournament != ''" :
       pb.filter('website_source = {:v}', { v: f.src })
     ),
-    f.q && pb.filter('name ~ {:q} || name_en ~ {:q} || country ~ {:q} || region ~ {:q} || city ~ {:q}', { q: f.q }),
+    f.q && pb.filter('name ~ {:q} || name_en ~ {:q} || country ~ {:q} || region ~ {:q} || city ~ {:q}', { q: sanitizeSearch(f.q) }),
   )
 }
 

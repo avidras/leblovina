@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { pb, type SearchKeyword, type SearchTarget } from '@/lib/pb'
+import { pb, sanitizeSearch, type SearchKeyword, type SearchTarget } from '@/lib/pb'
 import { usePagedCollection } from '@/hooks/usePagedCollection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useUrlState, usePersistentState } from '@/hooks/useUrlState'
@@ -49,7 +49,7 @@ function buildFilter(f: { q: string; country: string; status: string; target: st
     f.target && pb.filter('target = {:v}', { v: f.target }),
     f.country && pb.filter('country = {:v}', { v: f.country }),
     f.status && pb.filter('status = {:v}', { v: f.status }),
-    f.q && pb.filter('keyword ~ {:q} || country ~ {:q}', { q: f.q }),
+    f.q && pb.filter('keyword ~ {:q} || country ~ {:q}', { q: sanitizeSearch(f.q) }),
   )
 }
 

@@ -7,6 +7,13 @@ const url = import.meta.env.VITE_PB_URL || window.location.origin
 export const pb = new PocketBase(url)
 pb.autoCancellation(false)
 
+// Sanitize free-text search before it goes into a `~` (LIKE) filter. A backslash —
+// even when the SDK escapes it to `\\` — makes PocketBase's filter parser 400 the
+// whole query ("Something went wrong while processing your request."), which breaks
+// the entire list page. Backslashes carry no meaning in a club/name search, so drop
+// them. Always run user search input through this before pb.filter('… ~ {:q}', …).
+export const sanitizeSearch = (s: string): string => s.replace(/\\/g, '').trim()
+
 export type Confederation = 'CEV' | 'AVC' | 'CAVB' | 'NORCECA' | 'CSV'
 export const CONFEDERATIONS: Confederation[] = ['CEV', 'AVC', 'CAVB', 'NORCECA', 'CSV']
 

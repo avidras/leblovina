@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { pb, type Tournament } from '@/lib/pb'
+import { pb, sanitizeSearch, type Tournament } from '@/lib/pb'
 import { usePagedCollection } from '@/hooks/usePagedCollection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useUrlState, usePersistentState } from '@/hooks/useUrlState'
@@ -45,7 +45,7 @@ export function TournamentsPage({ onOpenClubs }: { onOpenClubs?: () => void } = 
   const filter = useMemo(() => {
     const parts: string[] = []
     if (status) parts.push(pb.filter('status = {:v}', { v: status }))
-    if (debouncedQ.trim()) parts.push(pb.filter('name ~ {:q} || keyword ~ {:q}', { q: debouncedQ.trim() }))
+    if (sanitizeSearch(debouncedQ)) parts.push(pb.filter('name ~ {:q} || keyword ~ {:q}', { q: sanitizeSearch(debouncedQ) }))
     return parts.map((p) => `(${p})`).join(' && ')
   }, [status, debouncedQ])
   const sortStr = `${sort.dir === 'asc' ? '+' : '-'}${sort.key}`

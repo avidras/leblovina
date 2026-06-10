@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { pb, CONFEDERATIONS, FEDERATION_STATUSES, type Federation } from '@/lib/pb'
+import { pb, sanitizeSearch, CONFEDERATIONS, FEDERATION_STATUSES, type Federation } from '@/lib/pb'
 import { usePagedCollection } from '@/hooks/usePagedCollection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useUrlState, usePersistentState } from '@/hooks/useUrlState'
@@ -36,7 +36,7 @@ function buildFederationsFilter(f: { conf: string; status: string; q: string }):
   return andFilter(
     f.conf && pb.filter('confederation = {:v}', { v: f.conf }),
     f.status && pb.filter('status = {:v}', { v: f.status }),
-    f.q && pb.filter('name ~ {:q} || country ~ {:q} || fivb_code ~ {:q}', { q: f.q }),
+    f.q && pb.filter('name ~ {:q} || country ~ {:q} || fivb_code ~ {:q}', { q: sanitizeSearch(f.q) }),
   )
 }
 

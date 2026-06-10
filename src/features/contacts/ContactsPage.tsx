@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { pb, type Contact, type Club, VERIFICATION_STATUSES, CONTACT_SOURCE_TYPES } from '@/lib/pb'
+import { pb, sanitizeSearch, type Contact, type Club, VERIFICATION_STATUSES, CONTACT_SOURCE_TYPES } from '@/lib/pb'
 import { usePagedCollection } from '@/hooks/usePagedCollection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useUrlState, usePersistentState, clearUrlParam } from '@/hooks/useUrlState'
@@ -48,7 +48,7 @@ function buildContactsFilter(f: { club: string; country: string; vs: string; src
     f.country && pb.filter('club.country = {:v}', { v: f.country }),
     f.vs && (f.vs === 'unverified' ? "verification_status = 'unverified' || verification_status = ''" : pb.filter('verification_status = {:v}', { v: f.vs })),
     f.src && (f.src === 'directory' ? "source_type = 'directory' || source_type = ''" : pb.filter('source_type = {:v}', { v: f.src })),
-    f.q && pb.filter('email ~ {:q} || club.name ~ {:q} || club.name_en ~ {:q} || position ~ {:q} || phone ~ {:q} || club.country ~ {:q}', { q: f.q }),
+    f.q && pb.filter('email ~ {:q} || club.name ~ {:q} || club.name_en ~ {:q} || position ~ {:q} || phone ~ {:q} || club.country ~ {:q}', { q: sanitizeSearch(f.q) }),
   )
 }
 
