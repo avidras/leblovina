@@ -24,6 +24,8 @@ function andFilter(...clauses: (string | false | undefined)[]): string {
 }
 
 type SortKey = 'keyword' | 'target' | 'country' | 'status' | 'results_count' | 'accepted_count' | 'new_clubs' | 'dup_count' | 'searched_at' | 'created'
+const SORT_KEYS: SortKey[] = ['keyword', 'target', 'country', 'status', 'results_count', 'accepted_count', 'new_clubs', 'dup_count', 'searched_at', 'created']
+const isValidSort = (v: { key: string; dir: string }) => !!v && SORT_KEYS.includes(v.key as SortKey) && (v.dir === 'asc' || v.dir === 'desc')
 
 const STATUSES = ['pending', 'searching', 'searched', 'error'] as const
 // Targets currently offered for ADDING keywords (tournaments lights up when its processor lands).
@@ -56,7 +58,7 @@ export function DiscoveryPage() {
   const [country, setCountry] = useUrlState('country')
   const [status, setStatus] = useUrlState('status')
   const [target, setTarget] = useUrlState('target')
-  const [sort, setSort] = usePersistentState<{ key: SortKey; dir: 'asc' | 'desc' }>('discovery:sort', { key: 'created', dir: 'desc' })
+  const [sort, setSort] = usePersistentState<{ key: SortKey; dir: 'asc' | 'desc' }>('discovery:sort', { key: 'created', dir: 'desc' }, isValidSort)
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(100)
   const resetPage = () => setPage(1)

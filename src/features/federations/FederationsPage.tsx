@@ -25,6 +25,8 @@ import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 // `clubs` is no longer sortable server-side (it's an aggregate, not a column);
 // `status` sorts alphabetically (PocketBase can only ORDER BY real columns).
 type SortKey = 'fivb_code' | 'name' | 'country' | 'confederation' | 'status' | 'last_scraped' | 'website_url'
+const SORT_KEYS: SortKey[] = ['fivb_code', 'name', 'country', 'confederation', 'status', 'last_scraped', 'website_url']
+const isValidSort = (v: { key: string; dir: string }) => !!v && SORT_KEYS.includes(v.key as SortKey) && (v.dir === 'asc' || v.dir === 'desc')
 
 function andFilter(...clauses: (string | false | undefined)[]): string {
   return clauses.filter(Boolean).map((c) => `(${c})`).join(' && ')
@@ -42,7 +44,7 @@ export function FederationsPage({ onOpenClubs }: { onOpenClubs: (country: string
   const [conf, setConf] = useUrlState('conf')
   const [status, setStatus] = useUrlState('status')
   const [q, setQ] = useUrlState('q')
-  const [sort, setSort] = usePersistentState<{ key: SortKey; dir: 'asc' | 'desc' }>('feds:sort', { key: 'status', dir: 'asc' })
+  const [sort, setSort] = usePersistentState<{ key: SortKey; dir: 'asc' | 'desc' }>('feds:sort', { key: 'status', dir: 'asc' }, isValidSort)
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(100)
   const [openId, setOpenId] = useState<string | null>(null)

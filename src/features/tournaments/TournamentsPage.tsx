@@ -14,6 +14,8 @@ import { Pagination } from '@/components/ui/pagination'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
 type SortKey = 'name' | 'country' | 'status' | 'clubs_found' | 'participants_count' | 'platform' | 'last_run' | 'created'
+const SORT_KEYS: SortKey[] = ['name', 'country', 'status', 'clubs_found', 'participants_count', 'platform', 'last_run', 'created']
+const isValidSort = (v: { key: string; dir: string }) => !!v && SORT_KEYS.includes(v.key as SortKey) && (v.dir === 'asc' || v.dir === 'desc')
 
 const STATUSES = ['pending', 'searching', 'found', 'extracted', 'no_participants', 'error', 'needs_review'] as const
 function statusTone(s: string): 'green' | 'blue' | 'amber' | 'red' | 'neutral' {
@@ -31,7 +33,7 @@ const host = (u: string) => u.replace(/^https?:\/\//, '').replace(/\/$/, '')
 export function TournamentsPage({ onOpenClubs }: { onOpenClubs?: () => void } = {}) {
   const [q, setQ] = useUrlState('q')
   const [status, setStatus] = useUrlState('status')
-  const [sort, setSort] = usePersistentState<{ key: SortKey; dir: 'asc' | 'desc' }>('tournaments:sort', { key: 'created', dir: 'desc' })
+  const [sort, setSort] = usePersistentState<{ key: SortKey; dir: 'asc' | 'desc' }>('tournaments:sort', { key: 'created', dir: 'desc' }, isValidSort)
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(100)
   const resetPage = () => setPage(1)

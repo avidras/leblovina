@@ -20,6 +20,8 @@ import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 import { ClubDetailDialog } from '@/features/clubs/ClubsPage'
 
 type SortKey = 'club' | 'country' | 'email' | 'position' | 'phone' | 'source' | 'sourceType' | 'verification' | 'created'
+const SORT_KEYS: SortKey[] = ['club', 'country', 'email', 'position', 'phone', 'source', 'sourceType', 'verification', 'created']
+const isValidSort = (v: { key: string; dir: string }) => !!v && SORT_KEYS.includes(v.key as SortKey) && (v.dir === 'asc' || v.dir === 'desc')
 
 // Map the sortable column to its PocketBase field (club/country are relation fields).
 const SORT_FIELD: Record<SortKey, string> = {
@@ -56,7 +58,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
   const [countryF, setCountryF] = useUrlState('country')
   const [vsFilter, setVsFilter] = useUrlState('vs')
   const [srcFilter, setSrcFilter] = useUrlState('src')
-  const [sort, setSort] = usePersistentState<{ key: SortKey; dir: 'asc' | 'desc' }>('contacts:sort', { key: 'club', dir: 'asc' })
+  const [sort, setSort] = usePersistentState<{ key: SortKey; dir: 'asc' | 'desc' }>('contacts:sort', { key: 'club', dir: 'asc' }, isValidSort)
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(100)
   const [openId, setOpenId] = useState<string | null>(null)

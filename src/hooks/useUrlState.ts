@@ -39,11 +39,18 @@ export function useUrlState(key: string, initial = ''): [string, (v: string) => 
 }
 
 // localStorage-backed state for non-string UI prefs (e.g. sort {key,dir}). Persists per user.
-export function usePersistentState<T>(key: string, initial: T): [T, React.Dispatch<React.SetStateAction<T>>] {
+// `validate` guards against stale shapes that survive across deploys — e.g. a persisted sort
+// key for a column that no longer exists, which would otherwise make PocketBase 400 every list
+// query ("Something went wrong while processing your request."). Invalid stored values fall back
+// to `initial` and are rewritten to storage (self-heal).
+export function usePersistentState<T>(key: string, initial: T, validate?: (v: T) => boolean): [T, React.Dispatch<React.SetStateAction<T>>] {
   const [val, setVal] = useState<T>(() => {
     const s = lsGet(key)
     if (s == null) return initial
-    try { return JSON.parse(s) as T } catch { return initial }
+    try {
+      const parsed = JSON.parse(s) as T
+      return validate && !validate(parsed) ? initial : parsed
+    } catch { return initial }
   })
   useEffect(() => {
     try { localStorage.setItem(LS + key, JSON.stringify(val)) } catch { /* ignore */ }

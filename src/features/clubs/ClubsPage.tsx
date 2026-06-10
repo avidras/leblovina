@@ -24,6 +24,8 @@ import { withFlag } from '@/lib/countries'
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table'
 
 type SortKey = 'name' | 'country' | 'city' | 'status' | 'last_scraped' | 'created' | 'website_url' | 'website_status' | 'website_confidence' | 'club_type'
+const SORT_KEYS: SortKey[] = ['name', 'country', 'city', 'status', 'last_scraped', 'created', 'website_url', 'website_status', 'website_confidence', 'club_type']
+const isValidSort = (v: { key: string; dir: string }) => !!v && SORT_KEYS.includes(v.key as SortKey) && (v.dir === 'asc' || v.dir === 'desc')
 
 // Combine filter clauses with AND, wrapping each clause so OR-groups stay scoped.
 function andFilter(...clauses: (string | false | undefined)[]): string {
@@ -91,7 +93,7 @@ export function ClubsPage({ initialCountry, onOpenContacts }: { initialCountry?:
   const [wcFilter, setWcFilter] = useUrlState('wc')
   const [ctFilter, setCtFilter] = useUrlState('ct')
   const [srcFilter, setSrcFilter] = useUrlState('src')
-  const [sort, setSort] = usePersistentState<{ key: SortKey; dir: 'asc' | 'desc' }>('clubs:sort', { key: 'name', dir: 'asc' })
+  const [sort, setSort] = usePersistentState<{ key: SortKey; dir: 'asc' | 'desc' }>('clubs:sort', { key: 'name', dir: 'asc' }, isValidSort)
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(100)
   const [enrichBusy, setEnrichBusy] = useState(false)
