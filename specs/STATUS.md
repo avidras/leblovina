@@ -26,6 +26,10 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > rewritten). Skip-window now applies only to SETTLED
 > results (verified/undeliverable/catch_all); transient `unknown`/`unverified` are always
 > re-checked (2026-06-11). Catch-all verification badge = orange.
+> **Backfill fixed (2026-06-11):** n8n built-in pagination re-fetched page 0 ("identical response 5×"
+> abort); replaced with deterministic Count→offsets→per-page paging + async response. Ran on prod:
+> 8,004 Brevo contacts → 7,010 imported as source_type='brevo' (~994 already existed, skipped). DB
+> contacts 13,733 → 20,744.
 > Decisions: Reoon verify = manual button; Brevo gate =
 > only `verification_status='verified'` (proven-deliverable); Brevo delete = hard-delete via PB
 > hook; attrs NAME/CLUB/COUNTRY/QUALITY; backfill imports Brevo→PB as `source_type='brevo'`

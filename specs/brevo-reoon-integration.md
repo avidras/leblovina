@@ -150,14 +150,21 @@ up holding one row per address across *all* lists — Brevo here is region-segme
 lists, and the goal is a single source of truth. Pass an explicit `list_id` only to scope the
 import to one list. (Note: this default is independent of `settings.brevo.list_id`, which is the
 *push* target, a different concern.)
-1. **PB Auth**.
-2. **HTTP "Brevo list contacts"** (credential `Brevo (api)`, built-in offset pagination,
-   `limit=1000`): `GET /v3/contacts/lists/{id}/contacts` (or `/v3/contacts` if no list) → all
-   Brevo emails.
-3. **Code "Upsert into PB"**: for each email, **find-or-create** a `contacts` row
-   `{ email, source_type:'brevo' }` (no club). The `email` unique index makes it idempotent —
-   existing emails (already scraped) are left untouched, not duplicated. Return
-   `{ imported, skipped, total }`.
+Async (webhook responds `{started:true}` immediately), with **deterministic paging** — n8n's
+built-in offset pagination silently re-fetched page 0 and tripped its "identical response 5×"
+guard, so we drive offsets ourselves:
+1. **Respond** `{started:true}` → **Config** → **PB Auth**.
+2. **Code "Resolve"**: pick the path (`/v3/contacts`, or `/v3/contacts/lists/{id}/contacts` when a
+   `list_id` is passed).
+3. **HTTP "Count"** (credential `Brevo (api)`): `GET <path>?limit=1` → read Brevo's total `count`.
+4. **Code "Make offsets"**: emit one item per page — `{path, offset}` for `offset` in
+   `0, 1000, … < count`.
+5. **HTTP "Brevo page"** (per offset item): `GET <path>?limit=1000&offset=…` → that page's contacts.
+6. **Code "Upsert into PB"**: flatten all pages, lower-case + dedupe emails, then **find-or-create**
+   `{ email, source_type:'brevo' }` (no club) **concurrently** (chunks of 50). The `email` unique
+   index makes it idempotent — emails already scraped are skipped, not duplicated. Returns
+   `{ imported, skipped, total }`. *(Verified on prod: 8,004 Brevo contacts → 7,010 imported, ~994
+   already present and skipped.)*
 
 ## PocketBase delete hook
 
