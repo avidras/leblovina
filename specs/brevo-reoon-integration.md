@@ -103,9 +103,11 @@ Manual "Verify emails" button. Body `{ ids?, filter?, force? }` (omit → all no
    original 500: the webhook held the connection open for the whole job).
 2. **PB Auth**.
 3. **Code "Pick contacts"**: read `settings.reoon` (`reverify_days`). Resolve the target set
-   (`ids` → those; `filter` → page `contacts` by filter; else all). Drop any with `verified_at`
-   within `reverify_days` unless `force`. Emit **one item per contact** `{id,email,mode}` (deduped
-   on email).
+   (`ids` → those; `filter` → page `contacts` by filter; else all). Drop any verified within
+   `reverify_days` unless `force` — **but the skip-window applies only to SETTLED results
+   (`verified`/`undeliverable`/`catch_all`); transient `unknown`/`unverified` are always
+   re-checked** (an `unknown` is usually a temporary SMTP/greylist failure worth retrying). Emit
+   **one item per contact** `{id,email,mode}` (deduped on email).
 4. **`Loop` (Split In Batches, size 100)** — the spine. Each iteration:
    - **HTTP "Reoon verify"** (credential `Reoon (api)`, `onError: continueRegularOutput`): runs
      per item — `GET /api/v1/verify?email=…&mode=…` (key injected as a query param by the cred).

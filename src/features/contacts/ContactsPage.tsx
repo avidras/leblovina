@@ -292,7 +292,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
                   ) : <span className="text-neutral-400">—</span>}
                 </TD>
                 <TD>
-                  <Badge tone={c.verification_status === 'verified' ? 'green' : 'neutral'}>
+                  <Badge tone={c.verification_status === 'verified' ? 'green' : c.verification_status === 'catch_all' ? 'orange' : 'neutral'}>
                     {verificationLabel(c.verification_status || 'unverified')}
                   </Badge>
                 </TD>
@@ -332,7 +332,7 @@ function ContactDetailDialog({ contact, onClose, onDelete }: { contact: Contact 
         contact && (
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base font-semibold text-neutral-900">{contact.email}</h2>
-            <Badge tone={contact.verification_status === 'verified' ? 'green' : 'neutral'}>
+            <Badge tone={contact.verification_status === 'verified' ? 'green' : contact.verification_status === 'catch_all' ? 'orange' : 'neutral'}>
               {verificationLabel(contact.verification_status || 'unverified')}
             </Badge>
             {contact.quality && <Badge tone="blue">Quality {contact.quality}</Badge>}

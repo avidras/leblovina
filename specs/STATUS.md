@@ -23,8 +23,9 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > 13,602 contacts 500'd (sequential write-back hit the 60s Code cap; webhook held open). Now: webhook
 > responds immediately (`responseNode`), a **Split In Batches (100)** loop runs Reoon-per-item +
 > **concurrent** write-back per batch; smoke-tested live on 3 contacts (instant 200, statuses
-> rewritten). Open thought: `unknown` results still stamp `verified_at`, so the 90d skip-window
-> defers their retry — consider exempting transient `unknown` from the window.
+> rewritten). Skip-window now applies only to SETTLED
+> results (verified/undeliverable/catch_all); transient `unknown`/`unverified` are always
+> re-checked (2026-06-11). Catch-all verification badge = orange.
 > Decisions: Reoon verify = manual button; Brevo gate =
 > only `verification_status='verified'` (proven-deliverable); Brevo delete = hard-delete via PB
 > hook; attrs NAME/CLUB/COUNTRY/QUALITY; backfill imports Brevo→PB as `source_type='brevo'`
