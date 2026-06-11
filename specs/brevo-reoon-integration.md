@@ -97,21 +97,29 @@ Credentials (created once in n8n; **never committed**):
 
 ### 1. `verify-contacts-reoon` (webhook `verify-contacts-reoon`)
 Manual "Verify emails" button. Body `{ ids?, filter?, force? }` (omit → all not-recently-verified).
-1. **PB Auth**.
-2. **Code "Pick contacts"**: read `settings.reoon` (`reverify_days`). Resolve the target set
-   (`ids` → those; `filter` → page clubs/contacts by filter; else all `contacts`). Drop any with
-   `verified_at` within `reverify_days` unless `force`. Collect `{id,email}`; emit the unique
-   email list.
-3. **HTTP "Reoon bulk create"** (credential `Reoon (api)`): `POST /api/v1/create-bulk-verification-task`
-   `{ name, emails:[…] }` → `task_id`. (Chunk to Reoon's per-task cap if needed.)
-4. **Wait + HTTP "Reoon bulk result"**: poll `GET /api/v1/get-result-bulk-verification-task?task_id=…`
-   until complete → per-email `{status,…}`.
-5. **Code "Write back"** (PB): map each result (table above) → PATCH the matching contact(s)
-   `{verification_status, verified_at}`. Stamp `settings.reoon.last_run`. Return counts
-   `{verified, undeliverable, catch_all, unknown, skipped}`.
+**Async, batched** — built to chew through the full ~15k-contact table without timing out:
+1. **Webhook (`responseMode: responseNode`) → Respond** `{started:true}` **immediately**, then keep
+   running in the background. The UI never waits (a synchronous run over 15k emails was the
+   original 500: the webhook held the connection open for the whole job).
+2. **PB Auth**.
+3. **Code "Pick contacts"**: read `settings.reoon` (`reverify_days`). Resolve the target set
+   (`ids` → those; `filter` → page `contacts` by filter; else all). Drop any with `verified_at`
+   within `reverify_days` unless `force`. Emit **one item per contact** `{id,email,mode}` (deduped
+   on email).
+4. **`Loop` (Split In Batches, size 100)** — the spine. Each iteration:
+   - **HTTP "Reoon verify"** (credential `Reoon (api)`, `onError: continueRegularOutput`): runs
+     per item — `GET /api/v1/verify?email=…&mode=…` (key injected as a query param by the cred).
+   - **Code "Write back"**: zip the batch's `{id}` (from `$('Loop')`) with the Reoon responses
+     (`$input`) by index, map status (table above), and PATCH the 100 contacts
+     `{verification_status, verified_at}` **concurrently** (chunks of 25 — keeps every Code run
+     well under the 60s cap; the original failure was 13,602 *sequential* PATCHes in one node).
+   - Loop back to `Loop` for the next batch.
+5. **Code "Finish"** (the loop's "done" output): stamp `settings.reoon.last_run`.
 
-> Small sets may instead use single-email `GET /api/v1/verify?email=&mode=power` per the same
-> mapping; the bulk task API is the default for scale.
+Progress is visible live in the Contacts table (PB realtime) as each batch writes back. Scope a
+run with the page filter to limit credits/time; `force` re-verifies inside the `reverify_days`
+window. Per-email single verify (not Reoon's bulk-task API) by decision — simplest, and the
+SplitInBatches loop makes it reliable at scale.
 
 ### 2. `sync-contacts-brevo` (webhook `sync-contacts-brevo`)
 Manual "Sync deliverable to Brevo" button. Body `{}` (syncs **all** eligible) or `{ filter }`.
@@ -135,7 +143,11 @@ Fired by the PB delete hook, **not** a UI button. Body `{ email }`.
 No PB call needed.
 
 ### 4. `brevo-backfill` (webhook `brevo-backfill`) — one-time
-Body `{ list_id? }` (defaults to `settings.brevo.list_id`, else the whole account).
+Body `{ list_id? }`. **Defaults to the WHOLE Brevo account** (`GET /v3/contacts`) so the DB ends
+up holding one row per address across *all* lists — Brevo here is region-segmented into several
+lists, and the goal is a single source of truth. Pass an explicit `list_id` only to scope the
+import to one list. (Note: this default is independent of `settings.brevo.list_id`, which is the
+*push* target, a different concern.)
 1. **PB Auth**.
 2. **HTTP "Brevo list contacts"** (credential `Brevo (api)`, built-in offset pagination,
    `limit=1000`): `GET /v3/contacts/lists/{id}/contacts` (or `/v3/contacts` if no list) → all

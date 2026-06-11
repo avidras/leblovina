@@ -12,9 +12,20 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > batches + a driver). Then Phase 3 (Europe-wide run + count QA), 4 (Apify/platform), 5 (site scraper).
 > New workflow id: extract-club-contacts `wbiJdurHtKbbQtye`.
 >
-> **Phase 4 — Brevo sync + Reoon verification (built 2026-06-10; NOT yet live):** Spec
-> `specs/brevo-reoon-integration.md`. Code/schema/UI/workflows all committed; deploy is **blocked
-> on three secrets the user must provide**. Decisions: Reoon verify = manual button; Brevo gate =
+> **Phase 4 — Brevo sync + Reoon verification (LIVE 2026-06-11):** Spec
+> `specs/brevo-reoon-integration.md`. Deployed: prod migration applied (club optional, source_type
+> +brevo, settings brevo/reoon), delete hook + Contacts UI shipped. n8n live ids: verify
+> `7EzGsk9i4T0C5ucI`, sync `QAejl1NsI2tPHl6m`, delete `UHF9YJEN4VJDNrTk`, backfill `3ZMjHBO2fQPkCqbX`
+> (all active). Creds: `Brevo (api)` `oIxwF9CXYhqzmPEu` (Header `api-key`), `Reoon (api)`
+> `LQSDbLgzUaEW1WDk` (Query `key`). Push target = **new dedicated Brevo list "App – verified leads"
+> id 12** (`settings.brevo.list_id=12`); backfill pulls the **whole account** (Brevo is 6
+> region-segmented lists ~8.2k subs). **Verify workflow redesigned (2026-06-11):** a sync run over
+> 13,602 contacts 500'd (sequential write-back hit the 60s Code cap; webhook held open). Now: webhook
+> responds immediately (`responseNode`), a **Split In Batches (100)** loop runs Reoon-per-item +
+> **concurrent** write-back per batch; smoke-tested live on 3 contacts (instant 200, statuses
+> rewritten). Open thought: `unknown` results still stamp `verified_at`, so the 90d skip-window
+> defers their retry — consider exempting transient `unknown` from the window.
+> Decisions: Reoon verify = manual button; Brevo gate =
 > only `verification_status='verified'` (proven-deliverable); Brevo delete = hard-delete via PB
 > hook; attrs NAME/CLUB/COUNTRY/QUALITY; backfill imports Brevo→PB as `source_type='brevo'`
 > (email-only, no club). Built: migration `1780656100_brevo_reoon.js` (club→optional, source_type

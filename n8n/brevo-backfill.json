@@ -42,7 +42,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst body=($('Webhook').first().json.body)||{};\nlet listId=body.list_id;\nif(listId==null){ try{ const s=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/settings/records',qs:{filter:'key=\"brevo\"',perPage:1},headers:pbH,json:true}); const v=(s.items&&s.items[0]&&s.items[0].value)||{}; listId=v.list_id; }catch(e){} }\nconst base='https://api.brevo.com';\nconst url = (listId!=null) ? (base+'/v3/contacts/lists/'+Number(listId)+'/contacts?limit=1000') : (base+'/v3/contacts?limit=1000');\nreturn [{json:{url, listId: (listId!=null?Number(listId):null)}}];\n"
+        "jsCode": "// Backfill imports ALL Brevo contacts (whole account) by default, so the DB holds one\n// row per address across every list. Pass an explicit body.list_id only to scope to one list.\nconst body=($('Webhook').first().json.body)||{};\nconst listId = (body.list_id!=null) ? Number(body.list_id) : null;\nconst base='https://api.brevo.com';\nconst url = (listId!=null) ? (base+'/v3/contacts/lists/'+listId+'/contacts?limit=1000') : (base+'/v3/contacts?limit=1000');\nreturn [{json:{url, listId}}];\n"
       },
       "id": "resolve",
       "name": "Resolve list",
