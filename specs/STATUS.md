@@ -42,6 +42,13 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > unknown/unverified without re-spending on settled). Reoon note: ~62% of the 20k came back
 > `unknown` — verified to be mostly genuine (small club mail servers block SMTP probing; 7/8 re-checks
 > stay unknown after 10-17s real SMTP). 5,215 verified ready to sync.
+> **Background activity panel (2026-06-12):** spec `specs/background-jobs.md`. New `job_runs`
+> collection (migration `1780656300`, created on prod via API) that long-running n8n workflows
+> heartbeat into (start/heartbeat/finish via `$getWorkflowStaticData`); global header indicator
+> `ActivityIndicator` subscribes via realtime and shows live progress + state (running/stalled/done/
+> error). Instrumented + tested: verify (live per-batch progress), sync, backfill. Not yet:
+> batch-process/batch-enrich/site-scrape-driver/englishize (same 3-write pattern; panel auto-shows
+> any reporter). UI ships on next Coolify deploy.
 > Decisions: Reoon verify = manual button; Brevo gate =
 > only `verification_status='verified'` (proven-deliverable); Brevo delete = hard-delete via PB
 > hook; attrs NAME/CLUB/COUNTRY/QUALITY; backfill imports Brevo→PB as `source_type='brevo'`

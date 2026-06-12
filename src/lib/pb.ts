@@ -194,6 +194,24 @@ export interface Tournament {
   updated: string
 }
 
+// Mirrors the `job_runs` collection — background-job activity log that long-running n8n
+// workflows write to (start/heartbeat/finish) so the UI can show what's running. `updated`
+// is the heartbeat. See specs/background-jobs.md.
+export type JobStatus = 'running' | 'done' | 'error'
+export interface JobRun {
+  id: string
+  kind: string
+  label: string
+  status: JobStatus | ''
+  total: number
+  processed: number
+  message: string
+  started: string
+  finished: string
+  created: string
+  updated: string
+}
+
 export type VerificationStatus =
   | 'unverified' | 'mx_only' | 'verified' | 'catch_all' | 'undeliverable' | 'unknown'
 export const VERIFICATION_STATUSES: VerificationStatus[] = [

@@ -3,6 +3,7 @@ import { pb } from '@/lib/pb'
 import { Login } from '@/components/Login'
 import { Button } from '@/components/ui/button'
 import { Tooltip } from '@/components/ui/tooltip'
+import { ActivityIndicator } from '@/components/ActivityIndicator'
 import { useCollectionTotal } from '@/hooks/useCollectionTotal'
 import { FederationsPage } from '@/features/federations/FederationsPage'
 import { ClubsPage } from '@/features/clubs/ClubsPage'
@@ -81,6 +82,7 @@ export default function App() {
           {/* desktop nav */}
           <MainNav view={view} navigate={navigate} className="hidden md:flex" />
           <div className="ml-auto flex items-center gap-3">
+            <ActivityIndicator />
             <span className="hidden text-xs text-neutral-500 sm:inline">{pb.authStore.record?.email}</span>
             <Tooltip side="bottom" content="Sign out">
               <Button variant="ghost" size="icon" aria-label="Sign out" onClick={() => pb.authStore.clear()}>
