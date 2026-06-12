@@ -66,12 +66,21 @@ items.
 - **`brevo-backfill`** — opens at `Make offsets` (total = Brevo count), heartbeats per upsert chunk,
   closes at `Upsert into PB`.
 
-### Not yet instrumented (same 3-write pattern, easy to add when touched)
-- On-demand drivers triggered from the UI: `batch-process` (Process N), `batch-enrich` (Resolve N),
-  `site-scrape-driver` (Scrape sites), `englishize-clubs`.
+- **`englishize-clubs`** — full live progress (`Collect` opens, `Write name_en` heartbeats per
+  batch, `Finalize` closes).
+- **`batch-enrich`** (Resolve N) and **`batch-process`** (Process N) — had **no PB auth** (pure
+  dispatchers), so a `Config`+`PB Auth` chain was prepended; `Split ids` opens the run, a `Job tick`
+  node on the loop-back heartbeats per batch, a `Job done` node on the loop's done output closes it.
+- **`site-scrape-driver`** (Scrape sites) — `List clubs` opens the run (total = # clubs dispatched),
+  a `Job done` node after `Fire workers` closes it (dispatch job; the live crawl progress stays in
+  the scrape-queue panel).
+
+All verified end-to-end (empty-input runs produced correct running→done records).
+
+### Deliberately not shown as jobs
 - The cron drains (`scrape-queue-drain`, `search-discover-drain`) already expose queue depth on the
-  Clubs/Discovery pages; they tick continuously, so they're better left to those panels than shown
-  as discrete jobs.
+  Clubs/Discovery pages; they tick continuously every couple of minutes, so they're better left to
+  those panels than flooding the activity list with discrete job rows.
 
 The panel shows **any** workflow that writes a `job_runs` row, so coverage grows incrementally with
 no UI change.

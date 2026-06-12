@@ -46,9 +46,10 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > collection (migration `1780656300`, created on prod via API) that long-running n8n workflows
 > heartbeat into (start/heartbeat/finish via `$getWorkflowStaticData`); global header indicator
 > `ActivityIndicator` subscribes via realtime and shows live progress + state (running/stalled/done/
-> error). Instrumented + tested: verify (live per-batch progress), sync, backfill. Not yet:
-> batch-process/batch-enrich/site-scrape-driver/englishize (same 3-write pattern; panel auto-shows
-> any reporter). UI ships on next Coolify deploy.
+> error). Instrumented + tested ALL user-triggered long-runners: verify (live per-batch),
+> sync, backfill, englishize (live), batch-enrich + batch-process (added Config/PB-Auth chain +
+> Job tick/Job done nodes — they had no PB auth), site-scrape-driver (dispatch job). Cron drains
+> left to their queue panels by design. UI ships on next Coolify deploy.
 > Decisions: Reoon verify = manual button; Brevo gate =
 > only `verification_status='verified'` (proven-deliverable); Brevo delete = hard-delete via PB
 > hook; attrs NAME/CLUB/COUNTRY/QUALITY; backfill imports Brevo→PB as `source_type='brevo'`

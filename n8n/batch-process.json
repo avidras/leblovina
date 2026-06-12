@@ -22,7 +22,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const body = $json.body || {};\nconst ids = Array.isArray(body.ids) ? body.ids : [];\nreturn ids.filter(Boolean).map(id => ({ json: { id } }));\n"
+        "jsCode": "const body=($('Webhook').first().json.body)||{};\nconst ids=Array.isArray(body.ids)?body.ids.filter(Boolean):[];\nconst PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst sd=$getWorkflowStaticData('global'); const now=new Date().toISOString();\nlet jobId=''; try{ const j=await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/job_runs/records',headers:pbH,body:{kind:'batch-process',label:'Process federations',status:'running',total:ids.length,processed:0,started:now},json:true}); jobId=j.id; }catch(e){}\nsd.jobId=jobId; sd.jobProcessed=0; sd.jobTotal=ids.length;\nif(!ids.length && jobId){ try{ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/job_runs/records/'+jobId,headers:pbH,body:{status:'done',finished:now,processed:0,message:'Nothing to process'},json:true}); }catch(e){} sd.jobId=''; }\nreturn ids.map(id=>({json:{id}}));\n"
       },
       "id": "split",
       "name": "Split ids",
@@ -67,6 +67,82 @@
         120
       ],
       "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p",
+              "name": "pbUrl",
+              "value": "https://leblovina.tools.biceps.digital",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfgx",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -760,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.pbUrl }}/api/collections/_superusers/auth-with-password",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "id": "authx",
+      "name": "PB Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -600,
+        0
+      ],
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "hzdBwrAqrPZjDmME",
+          "name": "PocketBase admin (api)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const sd=$getWorkflowStaticData('global');\nif(sd.jobId){ const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,''); const token=$('PB Auth').first().json.token; const pbH={Authorization:token};\n  try{ sd.jobProcessed=(sd.jobProcessed||0)+$('Loop').all().length; await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/job_runs/records/'+sd.jobId,headers:pbH,body:{processed:Math.min(sd.jobProcessed,sd.jobTotal||sd.jobProcessed),message:'processing…'},json:true}); }catch(e){} }\nreturn $input.all();\n"
+      },
+      "id": "tickx",
+      "name": "Job tick",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const sd=$getWorkflowStaticData('global');\nif(sd.jobId){ const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,''); const token=$('PB Auth').first().json.token; const pbH={Authorization:token};\n  try{ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/job_runs/records/'+sd.jobId,headers:pbH,body:{status:'done',finished:new Date().toISOString(),processed:(sd.jobTotal||sd.jobProcessed||0),total:(sd.jobTotal||0),message:'Done'},json:true}); }catch(e){} sd.jobId=''; }\nreturn [{json:{done:true}}];\n"
+      },
+      "id": "finx",
+      "name": "Job done",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        -160
+      ]
     }
   ],
   "connections": {
@@ -74,7 +150,7 @@
       "main": [
         [
           {
-            "node": "Split ids",
+            "node": "Config",
             "type": "main",
             "index": 0
           }
@@ -94,7 +170,13 @@
     },
     "Loop": {
       "main": [
-        [],
+        [
+          {
+            "node": "Job done",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Process federation",
@@ -105,6 +187,39 @@
       ]
     },
     "Process federation": {
+      "main": [
+        [
+          {
+            "node": "Job tick",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "PB Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PB Auth": {
+      "main": [
+        [
+          {
+            "node": "Split ids",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job tick": {
       "main": [
         [
           {
