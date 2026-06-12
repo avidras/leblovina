@@ -2,26 +2,44 @@
   "name": "Leblovina — Sync contacts to Brevo",
   "nodes": [
     {
-      "parameters": { "httpMethod": "POST", "path": "sync-contacts-brevo", "responseMode": "lastNode", "options": {} },
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sync-contacts-brevo",
+        "responseMode": "lastNode",
+        "options": {}
+      },
       "id": "wh",
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [-820, 0],
+      "position": [
+        -820,
+        0
+      ],
       "webhookId": "sync-contacts-brevo"
     },
     {
       "parameters": {
-        "assignments": { "assignments": [
-          { "id": "p", "name": "pbUrl", "value": "https://leblovina.tools.biceps.digital", "type": "string" }
-        ] },
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p",
+              "name": "pbUrl",
+              "value": "https://leblovina.tools.biceps.digital",
+              "type": "string"
+            }
+          ]
+        },
         "options": {}
       },
       "id": "cfg",
       "name": "Config",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [-660, 0]
+      "position": [
+        -660,
+        0
+      ]
     },
     {
       "parameters": {
@@ -35,20 +53,31 @@
       "name": "PB Auth",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-500, 0],
-      "credentials": { "httpCustomAuth": { "id": "hzdBwrAqrPZjDmME", "name": "PocketBase admin (api)" } }
+      "position": [
+        -500,
+        0
+      ],
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "hzdBwrAqrPZjDmME",
+          "name": "PocketBase admin (api)"
+        }
+      }
     },
     {
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Emit the four custom attributes the import needs (idempotent create downstream).\nreturn [ {json:{name:'NAME'}}, {json:{name:'CLUB'}}, {json:{name:'COUNTRY'}}, {json:{name:'QUALITY'}} ];\n"
+        "jsCode": "// Reuse Brevo's existing attributes so country segments work and we don't create dup fields.\nreturn [ {json:{name:'FIRSTNAME'}}, {json:{name:'CLUB_NAME'}}, {json:{name:'COUNTRY'}}, {json:{name:'CITY'}}, {json:{name:'QUALITY'}} ];\n"
       },
       "id": "attrs",
       "name": "Attrs",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-340, 0]
+      "position": [
+        -340,
+        0
+      ]
     },
     {
       "parameters": {
@@ -65,21 +94,32 @@
       "name": "Ensure attr",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-160, 0],
+      "position": [
+        -160,
+        0
+      ],
       "onError": "continueRegularOutput",
-      "credentials": { "httpHeaderAuth": { "id": "REPLACE_BREVO_CRED", "name": "Brevo (api)" } }
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_BREVO_CRED",
+          "name": "Brevo (api)"
+        }
+      }
     },
     {
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst s=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/settings/records',qs:{filter:'key=\"brevo\"',perPage:1},headers:pbH,json:true});\nconst brevo=(s.items&&s.items[0]&&s.items[0].value)||{};\nconst listId=brevo.list_id;\nif(listId==null) throw new Error('settings.brevo.list_id is not set — set your Brevo newsletter list id first.');\nconst incoming=($('Webhook').first().json.body)||{};\n// GATE: only proven-deliverable (Reoon 'verified') contacts are pushed.\nlet filter='verification_status=\"verified\"';\nif(incoming.filter) filter='('+filter+') && ('+incoming.filter+')';\nlet rows=[]; let page=1;\nwhile(true){ const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs:{filter,expand:'club',perPage:500,page},headers:pbH,json:true}); for(const c of (r.items||[])){ const club=(c.expand&&c.expand.club)||{}; rows.push({email:c.email, attributes:{NAME:c.name||'', CLUB:club.name_en||club.name||'', COUNTRY:club.country||'', QUALITY:c.quality||''}}); } if(page>=(r.totalPages||1))break; page++; }\nconst out=[]; for(let i=0;i<rows.length;i+=1000){ out.push({json:{listIds:[Number(listId)],updateExistingContacts:true,jsonBody:rows.slice(i,i+1000)}}); }\nreturn out;\n"
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst s=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/settings/records',qs:{filter:'key=\"brevo\"',perPage:1},headers:pbH,json:true});\nconst brevo=(s.items&&s.items[0]&&s.items[0].value)||{};\nconst listId=brevo.list_id;\nif(listId==null) throw new Error('settings.brevo.list_id is not set — set your Brevo newsletter list id first.');\nconst incoming=($('Webhook').first().json.body)||{};\n// GATE: proven-deliverable (verified) AND not blocklisted (unsubscribed/spam).\nlet filter='verification_status=\"verified\" && blocklisted!=true';\nif(incoming.filter) filter='('+filter+') && ('+incoming.filter+')';\nlet rows=[]; let page=1;\nwhile(true){ const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs:{filter,expand:'club',perPage:500,page},headers:pbH,json:true}); for(const c of (r.items||[])){ const club=(c.expand&&c.expand.club)||{}; rows.push({email:c.email, attributes:{FIRSTNAME:c.name||'', CLUB_NAME:(club.name_en||club.name||''), COUNTRY:club.country||'', CITY:club.city||'', QUALITY:c.quality||''}}); } if(page>=(r.totalPages||1))break; page++; }\nconst out=[]; for(let i=0;i<rows.length;i+=1000){ out.push({json:{listIds:[Number(listId)],updateExistingContacts:true,jsonBody:rows.slice(i,i+1000)}}); }\nreturn out;\n"
       },
       "id": "build",
       "name": "Build payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [40, 0]
+      "position": [
+        40,
+        0
+      ]
     },
     {
       "parameters": {
@@ -96,8 +136,16 @@
       "name": "Brevo import",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [240, 0],
-      "credentials": { "httpHeaderAuth": { "id": "REPLACE_BREVO_CRED", "name": "Brevo (api)" } }
+      "position": [
+        240,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_BREVO_CRED",
+          "name": "Brevo (api)"
+        }
+      }
     },
     {
       "parameters": {
@@ -109,20 +157,97 @@
       "name": "Finish",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [440, 0]
+      "position": [
+        440,
+        0
+      ]
     }
   ],
   "connections": {
-    "Webhook": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
-    "Config": { "main": [[{ "node": "PB Auth", "type": "main", "index": 0 }]] },
-    "PB Auth": { "main": [[{ "node": "Attrs", "type": "main", "index": 0 }]] },
-    "Attrs": { "main": [[{ "node": "Ensure attr", "type": "main", "index": 0 }]] },
-    "Ensure attr": { "main": [[{ "node": "Build payload", "type": "main", "index": 0 }]] },
-    "Build payload": { "main": [[{ "node": "Brevo import", "type": "main", "index": 0 }]] },
-    "Brevo import": { "main": [[{ "node": "Finish", "type": "main", "index": 0 }]] }
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "PB Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PB Auth": {
+      "main": [
+        [
+          {
+            "node": "Attrs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attrs": {
+      "main": [
+        [
+          {
+            "node": "Ensure attr",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ensure attr": {
+      "main": [
+        [
+          {
+            "node": "Build payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build payload": {
+      "main": [
+        [
+          {
+            "node": "Brevo import",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Brevo import": {
+      "main": [
+        [
+          {
+            "node": "Finish",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1"
+  },
   "active": false,
   "pinData": {},
-  "meta": { "templateId": "leblovina-sync-contacts-brevo" }
+  "meta": {
+    "templateId": "leblovina-sync-contacts-brevo"
+  }
 }

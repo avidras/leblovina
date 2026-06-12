@@ -218,6 +218,10 @@ export interface Contact {
   verification_status: VerificationStatus | ''
   verified_at: string
   quality: 'A' | 'B' | 'C' | ''
+  // Mirrors Brevo emailBlacklisted: an unsubscribed / spam-marked address. Excluded
+  // from the Brevo sync, Reoon verification, and CSV export. See
+  // specs/brevo-reoon-integration.md.
+  blocklisted: boolean
   notes: string
   created: string
   updated: string

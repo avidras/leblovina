@@ -19,8 +19,12 @@ called from **credentialed HTTP Request nodes** (Code nodes can't read credentia
 - `brevo-contact-delete.json` — `/webhook/brevo-contact-delete`. Fired by the PocketBase
   `pb_hooks/brevo_contact_delete.pb.js` delete hook (not a UI button); hard-deletes the email in
   Brevo (404 tolerated).
-- `brevo-backfill.json` — `/webhook/brevo-backfill`. One-time import of contacts already in Brevo
-  into PB as `source_type='brevo'` (email only, no club). Idempotent on the `email` unique index.
+- `brevo-backfill.json` — `/webhook/brevo-backfill`. Import contacts already in Brevo into PB as
+  `source_type='brevo'` (email only, no club) **and** capture/refresh each contact's `blocklisted`
+  flag from Brevo `emailBlacklisted`. Idempotent — re-run as the manual blocklist refresh.
+- `brevo-unsubscribe.json` — `/webhook/brevo-unsubscribe`. Target of a Brevo **marketing webhook**
+  (events `unsubscribed`/`hardBounce`/`spam`); marks the contact `blocklisted=true` (find-or-create
+  by email) so opt-outs are excluded from sync/verify/export in real time.
 
 ### One-time setup (credentials — never committed)
 1. **`Brevo (api)`** — n8n → Credentials → New → **Header Auth**, header **`api-key`** = your

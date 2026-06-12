@@ -30,6 +30,18 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > abort); replaced with deterministic Count→offsets→per-page paging + async response. Ran on prod:
 > 8,004 Brevo contacts → 7,010 imported as source_type='brevo' (~994 already existed, skipped). DB
 > contacts 13,733 → 20,744.
+> **Blocklist + attribute alignment (2026-06-12):** added `contacts.blocklisted` (migration
+> `1780656200`, also applied to prod via API). Brevo blocklisted (unsubscribe/spam) contacts are
+> excluded from sync (`verified && blocklisted!=true`), Reoon verify, and CSV export. Backfill now
+> captures+refreshes `blocklisted` from Brevo `emailBlacklisted` (re-run = manual refresh; first run
+> flagged 1,439/8,004); new `brevo-unsubscribe` workflow (`AXDiVMVZwLFlktKn`) + Brevo marketing
+> webhook (`id 2035382`, unsubscribed/hardBounce/spam) keep it real-time. Sync now sends Brevo's
+> EXISTING attributes (FIRSTNAME/CLUB_NAME/COUNTRY/CITY/QUALITY) so country segments work — COUNTRY
+> populates once a sync runs (sync hadn't been run yet; that's why custom fields looked empty). UI:
+> blocklist badge+filter, export excludes blocklisted, new "Verify pending only" action (re-checks
+> unknown/unverified without re-spending on settled). Reoon note: ~62% of the 20k came back
+> `unknown` — verified to be mostly genuine (small club mail servers block SMTP probing; 7/8 re-checks
+> stay unknown after 10-17s real SMTP). 5,215 verified ready to sync.
 > Decisions: Reoon verify = manual button; Brevo gate =
 > only `verification_status='verified'` (proven-deliverable); Brevo delete = hard-delete via PB
 > hook; attrs NAME/CLUB/COUNTRY/QUALITY; backfill imports Brevo→PB as `source_type='brevo'`

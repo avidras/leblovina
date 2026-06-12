@@ -2,12 +2,20 @@
   "name": "Leblovina — Brevo backfill (one-time)",
   "nodes": [
     {
-      "parameters": { "httpMethod": "POST", "path": "brevo-backfill", "responseMode": "responseNode", "options": {} },
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "brevo-backfill",
+        "responseMode": "responseNode",
+        "options": {}
+      },
       "id": "wh",
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [-1000, 0],
+      "position": [
+        -1000,
+        0
+      ],
       "webhookId": "brevo-backfill"
     },
     {
@@ -20,20 +28,33 @@
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [-840, 0]
+      "position": [
+        -840,
+        0
+      ]
     },
     {
       "parameters": {
-        "assignments": { "assignments": [
-          { "id": "p", "name": "pbUrl", "value": "https://leblovina.tools.biceps.digital", "type": "string" }
-        ] },
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p",
+              "name": "pbUrl",
+              "value": "https://leblovina.tools.biceps.digital",
+              "type": "string"
+            }
+          ]
+        },
         "options": {}
       },
       "id": "cfg",
       "name": "Config",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [-680, 0]
+      "position": [
+        -680,
+        0
+      ]
     },
     {
       "parameters": {
@@ -47,8 +68,16 @@
       "name": "PB Auth",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-520, 0],
-      "credentials": { "httpCustomAuth": { "id": "hzdBwrAqrPZjDmME", "name": "PocketBase admin (api)" } }
+      "position": [
+        -520,
+        0
+      ],
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "hzdBwrAqrPZjDmME",
+          "name": "PocketBase admin (api)"
+        }
+      }
     },
     {
       "parameters": {
@@ -60,7 +89,10 @@
       "name": "Resolve",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-340, 0]
+      "position": [
+        -340,
+        0
+      ]
     },
     {
       "parameters": {
@@ -73,8 +105,16 @@
       "name": "Count",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-160, 0],
-      "credentials": { "httpHeaderAuth": { "id": "REPLACE_BREVO_CRED", "name": "Brevo (api)" } }
+      "position": [
+        -160,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_BREVO_CRED",
+          "name": "Brevo (api)"
+        }
+      }
     },
     {
       "parameters": {
@@ -86,48 +126,148 @@
       "name": "Make offsets",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [20, 0]
+      "position": [
+        20,
+        0
+      ]
     },
     {
       "parameters": {
         "url": "=https://api.brevo.com{{ $json.path }}?limit=1000&offset={{ $json.offset }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
-        "options": { "timeout": 30000 }
+        "options": {
+          "timeout": 30000
+        }
       },
       "id": "page",
       "name": "Brevo page",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [200, 0],
+      "position": [
+        200,
+        0
+      ],
       "onError": "continueRegularOutput",
-      "credentials": { "httpHeaderAuth": { "id": "REPLACE_BREVO_CRED", "name": "Brevo (api)" } }
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_BREVO_CRED",
+          "name": "Brevo (api)"
+        }
+      }
     },
     {
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst pages=$input.all();\nlet emails=[];\nfor(const p of pages){ const cs=(p.json&&p.json.contacts)||[]; for(const c of cs){ if(c&&c.email) emails.push(String(c.email).trim().toLowerCase()); } }\nemails=[...new Set(emails)].filter(Boolean);\nlet imported=0, skipped=0;\nfor(let i=0;i<emails.length;i+=50){ await Promise.all(emails.slice(i,i+50).map(email=>this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/contacts/records',headers:pbH,body:{email,source_type:'brevo'},json:true}).then(()=>{imported++;}).catch(()=>{skipped++;}))); }\nreturn [{json:{imported,skipped,total:emails.length}}];\n"
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst pages=$input.all();\n// email -> blocklisted (Brevo emailBlacklisted is authoritative)\nconst map=new Map();\nfor(const p of pages){ const cs=(p.json&&p.json.contacts)||[]; for(const c of cs){ if(c&&c.email){ map.set(String(c.email).trim().toLowerCase(), c.emailBlacklisted===true); } } }\nconst entries=[...map.entries()];\nlet created=0, updated=0, skipped=0;\nconst upsert=async([email,bl])=>{\n  try{ await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/contacts/records',headers:pbH,body:{email,source_type:'brevo',blocklisted:bl},json:true}); created++; }\n  catch(e){\n    // already exists -> refresh its blocklisted flag from Brevo if it changed\n    try{ const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs:{filter:'email=\"'+email+'\"',perPage:1,fields:'id,blocklisted'},headers:pbH,json:true}); const rec=r.items&&r.items[0]; if(rec){ if(rec.blocklisted!==bl){ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/contacts/records/'+rec.id,headers:pbH,body:{blocklisted:bl},json:true}); updated++; } } else { skipped++; } }catch(_){ skipped++; }\n  }\n};\nfor(let i=0;i<entries.length;i+=40){ await Promise.all(entries.slice(i,i+40).map(upsert)); }\nreturn [{json:{created,updated,total:entries.length}}];\n"
       },
       "id": "upsert",
       "name": "Upsert into PB",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [400, 0]
+      "position": [
+        400,
+        0
+      ]
     }
   ],
   "connections": {
-    "Webhook": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] },
-    "Respond": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
-    "Config": { "main": [[{ "node": "PB Auth", "type": "main", "index": 0 }]] },
-    "PB Auth": { "main": [[{ "node": "Resolve", "type": "main", "index": 0 }]] },
-    "Resolve": { "main": [[{ "node": "Count", "type": "main", "index": 0 }]] },
-    "Count": { "main": [[{ "node": "Make offsets", "type": "main", "index": 0 }]] },
-    "Make offsets": { "main": [[{ "node": "Brevo page", "type": "main", "index": 0 }]] },
-    "Brevo page": { "main": [[{ "node": "Upsert into PB", "type": "main", "index": 0 }]] }
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "PB Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PB Auth": {
+      "main": [
+        [
+          {
+            "node": "Resolve",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve": {
+      "main": [
+        [
+          {
+            "node": "Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Count": {
+      "main": [
+        [
+          {
+            "node": "Make offsets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Make offsets": {
+      "main": [
+        [
+          {
+            "node": "Brevo page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Brevo page": {
+      "main": [
+        [
+          {
+            "node": "Upsert into PB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1"
+  },
   "active": false,
   "pinData": {},
-  "meta": { "templateId": "leblovina-brevo-backfill" }
+  "meta": {
+    "templateId": "leblovina-brevo-backfill"
+  }
 }

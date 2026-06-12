@@ -43,12 +43,14 @@ function andFilter(...clauses: (string | false | undefined)[]): string {
 
 // `unknown`-style defaults mirror the old client-side `(x || 'unverified')` /
 // `(x || 'directory')` defaulting. `q` searches across contact + related-club fields.
-function buildContactsFilter(f: { club: string; country: string; vs: string; src: string; q: string }): string {
+function buildContactsFilter(f: { club: string; country: string; vs: string; src: string; block: string; q: string }): string {
   return andFilter(
     f.club && pb.filter('club = {:v}', { v: f.club }),
     f.country && pb.filter('club.country = {:v}', { v: f.country }),
     f.vs && (f.vs === 'unverified' ? "verification_status = 'unverified' || verification_status = ''" : pb.filter('verification_status = {:v}', { v: f.vs })),
     f.src && (f.src === 'directory' ? "source_type = 'directory' || source_type = ''" : pb.filter('source_type = {:v}', { v: f.src })),
+    // blocklisted = unsubscribed/spam (mirrors Brevo). 'hide' is the typical view; 'only' to audit.
+    f.block === 'hide' ? 'blocklisted != true' : f.block === 'only' ? 'blocklisted = true' : false,
     f.q && pb.filter('email ~ {:q} || club.name ~ {:q} || club.name_en ~ {:q} || position ~ {:q} || phone ~ {:q} || club.country ~ {:q}', { q: sanitizeSearch(f.q) }),
   )
 }
@@ -59,6 +61,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
   const [countryF, setCountryF] = useUrlState('country')
   const [vsFilter, setVsFilter] = useUrlState('vs')
   const [srcFilter, setSrcFilter] = useUrlState('src')
+  const [blockF, setBlockF] = useUrlState('block')
   const [sort, setSort] = usePersistentState<{ key: SortKey; dir: 'asc' | 'desc' }>('contacts:sort', { key: 'club', dir: 'asc' }, isValidSort)
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(100)
@@ -68,16 +71,16 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
   const [actionBusy, setActionBusy] = useState(false)
   const countries = useCountries('contacts')
   const resetPage = () => setPage(1)
-  const filtersActive = [q, club, countryF, vsFilter, srcFilter].some(Boolean)
+  const filtersActive = [q, club, countryF, vsFilter, srcFilter, blockF].some(Boolean)
   const resetFilters = () => {
-    setQ(''); setClub(''); clearUrlParam('club'); setCountryF(''); setVsFilter(''); setSrcFilter('')
+    setQ(''); setClub(''); clearUrlParam('club'); setCountryF(''); setVsFilter(''); setSrcFilter(''); setBlockF('')
     resetPage()
   }
 
   const debouncedQ = useDebouncedValue(q, 300)
   const filter = useMemo(
-    () => buildContactsFilter({ club, country: countryF, vs: vsFilter, src: srcFilter, q: debouncedQ.trim() }),
-    [club, countryF, vsFilter, srcFilter, debouncedQ],
+    () => buildContactsFilter({ club, country: countryF, vs: vsFilter, src: srcFilter, block: blockF, q: debouncedQ.trim() }),
+    [club, countryF, vsFilter, srcFilter, blockF, debouncedQ],
   )
   const sortStr = `${sort.dir === 'asc' ? '+' : '-'}${SORT_FIELD[sort.key]}`
   const { items, totalItems, totalPages, loading, error, reload } = usePagedCollection<Contact>('contacts', {
@@ -87,12 +90,15 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
   const clubLabel = (c: Contact) => c.expand?.club?.name_en || c.expand?.club?.name || ''
   const clubCountry = (c: Contact) => c.expand?.club?.country ?? ''
 
-  // Export the CURRENT filtered view (all rows), all columns, as CSV.
+  // Export the CURRENT filtered view (all rows), all columns, as CSV. Blocklisted
+  // (unsubscribed/spam) contacts are always excluded from the export — they must not
+  // be re-contacted (unless you're explicitly auditing them via the 'Only blocklisted' filter).
   async function exportCsv() {
     setActionBusy(true)
     setActionMsg('Preparing export…')
     try {
-      const list = await pb.collection('contacts').getFullList<Contact>({ filter: filter || undefined, sort: sortStr, expand: 'club', batch: 500 })
+      const exportFilter = blockF === 'only' ? filter : andFilter(filter, 'blocklisted != true')
+      const list = await pb.collection('contacts').getFullList<Contact>({ filter: exportFilter || undefined, sort: sortStr, expand: 'club', batch: 500 })
       const rows = list.map((c) => ({
         club: c.expand?.club?.name_en || c.expand?.club?.name || '',
         club_native: c.expand?.club?.name || '',
@@ -131,6 +137,15 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
     runAction('Verifying emails via Reoon…', () => triggerVerifyContacts({ filter: filter || undefined }))
   }
 
+  // Verify ONLY the not-yet-settled contacts (unknown / unverified / never-checked) — ignores the
+  // on-screen filter. Re-runs the gaps without re-spending on already verified/undeliverable/catch-all.
+  // (Blocklisted contacts are skipped server-side.)
+  function verifyPending() {
+    if (!window.confirm('Verify only the pending contacts (unknown / unverified / never-checked)? Already-settled (verified/undeliverable/catch-all) and blocklisted contacts are skipped.')) return
+    const pending = 'verification_status="unknown" || verification_status="unverified" || verification_status=""'
+    runAction('Verifying pending contacts via Reoon…', () => triggerVerifyContacts({ filter: pending }))
+  }
+
   // Push ALL proven-deliverable (verified) contacts to Brevo — ignores the on-screen filter
   // by design (the deliverability gate, not the view, decides who is sent).
   function syncToBrevo() {
@@ -138,9 +153,9 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
     runAction('Syncing verified contacts to Brevo…', () => triggerBrevoSync())
   }
 
-  // One-time import of contacts already in Brevo (email only, source=Brevo). Idempotent.
+  // Import Brevo contacts (email only, source=Brevo) AND refresh blocklist status. Idempotent.
   function backfillFromBrevo() {
-    if (!window.confirm('Import contacts that already exist in Brevo into this database (as source "Brevo", email only)? Safe to re-run — existing emails are skipped.')) return
+    if (!window.confirm('Import contacts from Brevo (source "Brevo", email only) and refresh blocklist (unsubscribe/spam) status for all? Safe to re-run.')) return
     runAction('Importing contacts from Brevo…', () => triggerBrevoBackfill())
   }
 
@@ -185,7 +200,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
             <span aria-hidden className="text-neutral-400">✕</span>
           </button>
         )}
-        <FilterPanel activeCount={[srcFilter, vsFilter, countryF].filter(Boolean).length}>
+        <FilterPanel activeCount={[srcFilter, vsFilter, countryF, blockF].filter(Boolean).length}>
           <Select className="w-full" active={!!countryF} value={countryF} onChange={(e) => { setCountryF(e.target.value); resetPage() }} title="Filter by country">
             <option value="">Any country</option>
             {countries.map((c) => (<option key={c} value={c}>{c}</option>))}
@@ -201,6 +216,11 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
             {VERIFICATION_STATUSES.map((s) => (
               <option key={s} value={s}>{verificationLabel(s)}</option>
             ))}
+          </Select>
+          <Select className="w-full" active={!!blockF} value={blockF} onChange={(e) => { setBlockF(e.target.value); resetPage() }} title="Blocklist (unsubscribed / spam)">
+            <option value="">Any blocklist status</option>
+            <option value="hide">Hide blocklisted</option>
+            <option value="only">Only blocklisted</option>
           </Select>
         </FilterPanel>
         <ResetFiltersButton active={filtersActive} onReset={resetFilters} />
@@ -222,6 +242,12 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
             disabled: actionBusy || totalItems === 0,
             onSelect: verifyEmails,
           }, {
+            key: 'verify-pending',
+            label: 'Verify pending only (Reoon)',
+            description: 'Verify only the not-yet-settled contacts (unknown / unverified / never-checked), ignoring the on-screen filter. Skips already verified/undeliverable/catch-all and blocklisted — no wasted credits.',
+            disabled: actionBusy,
+            onSelect: verifyPending,
+          }, {
             key: 'sync-brevo',
             label: 'Sync deliverable to Brevo',
             description: 'Push ALL proven-deliverable (verified) contacts to the Brevo newsletter list, updating existing ones. Ignores the on-screen filter by design.',
@@ -229,8 +255,8 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
             onSelect: syncToBrevo,
           }, {
             key: 'backfill-brevo',
-            label: 'Import from Brevo (backfill)',
-            description: 'One-time: import contacts already in Brevo into this DB as source "Brevo" (email only). Idempotent — safe to re-run.',
+            label: 'Import / refresh from Brevo',
+            description: 'Import contacts that exist in Brevo (source "Brevo", email only) AND refresh every contact’s blocklist (unsubscribe/spam) status from Brevo. Idempotent — safe to re-run as your blocklist refresh.',
             disabled: actionBusy,
             onSelect: backfillFromBrevo,
           }]}
@@ -292,9 +318,12 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
                   ) : <span className="text-neutral-400">—</span>}
                 </TD>
                 <TD>
-                  <Badge tone={c.verification_status === 'verified' ? 'green' : c.verification_status === 'catch_all' ? 'orange' : 'neutral'}>
-                    {verificationLabel(c.verification_status || 'unverified')}
-                  </Badge>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <Badge tone={c.verification_status === 'verified' ? 'green' : c.verification_status === 'catch_all' ? 'orange' : 'neutral'}>
+                      {verificationLabel(c.verification_status || 'unverified')}
+                    </Badge>
+                    {c.blocklisted && <Badge tone="red" title="Unsubscribed / spam in Brevo — excluded from sync, verification and export">Blocklisted</Badge>}
+                  </div>
                 </TD>
                 <TD className="whitespace-nowrap text-xs text-neutral-500" title={c.created ? exactTime(c.created) : ''}>
                   {relTime(c.created)}
@@ -335,6 +364,7 @@ function ContactDetailDialog({ contact, onClose, onDelete }: { contact: Contact 
             <Badge tone={contact.verification_status === 'verified' ? 'green' : contact.verification_status === 'catch_all' ? 'orange' : 'neutral'}>
               {verificationLabel(contact.verification_status || 'unverified')}
             </Badge>
+            {contact.blocklisted && <Badge tone="red" title="Unsubscribed / spam in Brevo — excluded from sync, verification and export">Blocklisted</Badge>}
             {contact.quality && <Badge tone="blue">Quality {contact.quality}</Badge>}
           </div>
         )

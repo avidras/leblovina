@@ -127,10 +127,12 @@ SplitInBatches loop makes it reliable at scale.
 Manual "Sync deliverable to Brevo" button. Body `{}` (syncs **all** eligible) or `{ filter }`.
 1. **PB Auth**.
 2. **Code "Build payload"**: read `settings.brevo.list_id` (error out clearly if unset). Page
-   `contacts` where **`verification_status='verified'`** (AND any incoming `filter`), `expand=club`.
-   Build Brevo rows `{ email, attributes:{ NAME, CLUB, COUNTRY, QUALITY } }`
-   (NAME = contact name; CLUB = `name_en||name`; COUNTRY/QUALITY from the contact/club). Chunk
-   into batches (~1000) → one item per chunk: `{ listIds:[list_id], updateExistingContacts:true,
+   `contacts` where **`verification_status='verified' && blocklisted!=true`** (AND any incoming
+   `filter`), `expand=club`. Build Brevo rows reusing **Brevo's existing attributes**
+   `{ email, attributes:{ FIRSTNAME, CLUB_NAME, COUNTRY, CITY, QUALITY } }` (FIRSTNAME = contact
+   name; CLUB_NAME = `name_en||name`; COUNTRY/CITY from the club; QUALITY from the contact). COUNTRY
+   drives Brevo's country segments. Chunk into batches (~1000) → one item per chunk:
+   `{ listIds:[list_id], updateExistingContacts:true,
    jsonBody:[…] }`. Also ensure the four attributes exist (idempotent
    `POST /v3/contacts/attributes/normal/{NAME|CLUB|COUNTRY|QUALITY}` via an HTTP node, ignoring
    "already exists").
@@ -165,6 +167,32 @@ guard, so we drive offsets ourselves:
    index makes it idempotent — emails already scraped are skipped, not duplicated. Returns
    `{ imported, skipped, total }`. *(Verified on prod: 8,004 Brevo contacts → 7,010 imported, ~994
    already present and skipped.)*
+
+## Blocklist (unsubscribe / spam) — added 2026-06-12
+
+Brevo exposes `emailBlacklisted: true` per contact (unsubscribed, hard-bounced, or marked spam).
+These must never be re-contacted. Handling (decided via questionnaire — *flag + exclude
+everywhere*, *both* manual + automatic freshness, *reuse Brevo attributes*):
+
+- **Schema:** `contacts.blocklisted` (bool, migration `1780656200_contacts_blocklisted.js`). Kept
+  but flagged — never deleted (so a re-scrape/re-import can't silently revive an opt-out).
+- **Excluded everywhere:** the Brevo sync gate is `verified && blocklisted!=true`; Reoon "Pick
+  contacts" skips blocklisted (no wasted credits); CSV export always filters out blocklisted
+  (unless the "Only blocklisted" audit filter is active).
+- **Capture + manual refresh:** `brevo-backfill` now reads `emailBlacklisted` for every Brevo
+  contact and sets/updates `contacts.blocklisted` (create-or-update). Re-running it IS the manual
+  "refresh blocklist" — relabelled in the UI as **"Import / refresh from Brevo"**. *(First run:
+  1,439 of 8,004 flagged.)*
+- **Automatic (real-time):** Brevo **marketing webhook** (`id 2035382`, events
+  `unsubscribed`/`hardBounce`/`spam`) → n8n `brevo-unsubscribe` → marks the contact `blocklisted`
+  (find-or-create by email, so an opt-out from an address we don't yet hold is still remembered).
+- **UI:** a `blocklisted` red badge (table + dialog) and a blocklist filter (Any / Hide / Only).
+
+### 5. `brevo-unsubscribe` (webhook `brevo-unsubscribe`) — live id `AXDiVMVZwLFlktKn`
+Fired by the Brevo marketing webhook, not the UI. Body carries `{ event, email }`.
+1. **Config → PB Auth → Code "Mark blocklisted"**: lower-case the email, find the contact and PATCH
+   `blocklisted=true`; if absent, create `{ email, source_type:'brevo', blocklisted:true }`. Returns
+   2xx fast so Brevo doesn't retry.
 
 ## PocketBase delete hook
 
