@@ -5,7 +5,7 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "sync-contacts-brevo",
-        "responseMode": "lastNode",
+        "responseMode": "responseNode",
         "options": {}
       },
       "id": "wh",
@@ -110,7 +110,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst s=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/settings/records',qs:{filter:'key=\"brevo\"',perPage:1},headers:pbH,json:true});\nconst brevo=(s.items&&s.items[0]&&s.items[0].value)||{};\nconst listId=brevo.list_id;\nif(listId==null) throw new Error('settings.brevo.list_id is not set — set your Brevo newsletter list id first.');\nconst incoming=($('Webhook').first().json.body)||{};\nlet filter='(verification_status=\"verified\" || verification_status=\"catch_all\") && blocklisted!=true';\nif(incoming.filter) filter='('+filter+') && ('+incoming.filter+')';\nlet rows=[]; let page=1;\nwhile(true){ const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs:{filter,expand:'club',perPage:500,page},headers:pbH,json:true}); for(const c of (r.items||[])){ const club=(c.expand&&c.expand.club)||{}; rows.push({email:c.email, attributes:{FIRSTNAME:c.name||'', CLUB_NAME:(club.name_en||club.name||''), COUNTRY:club.country||'', CITY:club.city||'', QUALITY:c.quality||''}}); } if(page>=(r.totalPages||1))break; page++; }\n// --- job_runs: open the run ---\nconst sd=$getWorkflowStaticData('global'); const now=new Date().toISOString();\nlet jobId=''; try{ const j=await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/job_runs/records',headers:pbH,body:{kind:'sync-brevo',label:'Sync to Brevo',status:'running',total:rows.length,processed:0,started:now},json:true}); jobId=j.id; }catch(e){}\nsd.syncJobId=jobId; sd.syncTotal=rows.length;\nconst out=[]; for(let i=0;i<rows.length;i+=1000){ out.push({json:{listIds:[Number(listId)],updateExistingContacts:true,jsonBody:rows.slice(i,i+1000)}}); }\nif(!rows.length && jobId){ try{ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/job_runs/records/'+jobId,headers:pbH,body:{status:'done',finished:now,processed:0,message:'No deliverable contacts to push'},json:true}); }catch(e){} sd.syncJobId=''; }\nreturn out;\n"
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst s=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/settings/records',qs:{filter:'key=\"brevo\"',perPage:1},headers:pbH,json:true});\nconst brevo=(s.items&&s.items[0]&&s.items[0].value)||{};\nconst listId=brevo.list_id;\nif(listId==null) throw new Error('settings.brevo.list_id is not set — set your Brevo newsletter list id first.');\nconst incoming=($('Webhook').first().json.body)||{};\nlet filter='(verification_status=\"verified\" || verification_status=\"catch_all\" || verification_status=\"mx_only\") && blocklisted!=true';\nif(incoming.filter) filter='('+filter+') && ('+incoming.filter+')';\nlet rows=[]; let page=1;\nwhile(true){ const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs:{filter,expand:'club',perPage:500,page},headers:pbH,json:true}); for(const c of (r.items||[])){ const club=(c.expand&&c.expand.club)||{}; rows.push({email:c.email, attributes:{FIRSTNAME:c.name||'', CLUB_NAME:(club.name_en||club.name||''), COUNTRY:club.country||'', CITY:club.city||'', QUALITY:c.quality||''}}); } if(page>=(r.totalPages||1))break; page++; }\n// --- job_runs: open the run ---\nconst sd=$getWorkflowStaticData('global'); const now=new Date().toISOString();\nlet jobId=''; try{ const j=await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/job_runs/records',headers:pbH,body:{kind:'sync-brevo',label:'Sync to Brevo',status:'running',total:rows.length,processed:0,started:now},json:true}); jobId=j.id; }catch(e){}\nsd.syncJobId=jobId; sd.syncTotal=rows.length;\nconst elig={}; for(const r of rows){ if(r.email) elig[String(r.email).trim().toLowerCase()]=1; } sd.eligible=elig; sd.syncListId=Number(listId); sd.syncRemoved=0; sd.syncCaptured=0; sd.syncMembers=0;\nconst out=[]; for(let i=0;i<rows.length;i+=1000){ out.push({json:{listIds:[Number(listId)],updateExistingContacts:true,jsonBody:rows.slice(i,i+1000)}}); }\nif(!rows.length && jobId){ try{ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/job_runs/records/'+jobId,headers:pbH,body:{status:'done',finished:now,processed:0,message:'No deliverable contacts to push'},json:true}); }catch(e){} sd.syncJobId=''; }\nreturn out;\n"
       },
       "id": "build",
       "name": "Build payload",
@@ -130,7 +130,14 @@
         "jsonBody": "={{ JSON.stringify($json) }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
-        "options": {}
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 350
+            }
+          }
+        }
       },
       "id": "import",
       "name": "Brevo import",
@@ -145,22 +152,176 @@
           "id": "REPLACE_BREVO_CRED",
           "name": "Brevo (api)"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 2500
     },
     {
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst chunks=$('Build payload').all();\nlet pushed=0; for(const it of chunks){ pushed += ((it.json&&it.json.jsonBody)||[]).length; }\nconst now=new Date().toISOString();\ntry{ const s=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/settings/records',qs:{filter:'key=\"brevo\"',perPage:1},headers:pbH,json:true}); const rec=s.items&&s.items[0]; if(rec){ const v=rec.value||{}; v.last_sync=now; await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/settings/records/'+rec.id,headers:pbH,body:{value:v},json:true}); } }catch(e){}\nconst sd=$getWorkflowStaticData('global');\nif(sd.syncJobId){ try{ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/job_runs/records/'+sd.syncJobId,headers:pbH,body:{status:'done',finished:now,processed:pushed,total:(sd.syncTotal||pushed),message:'Pushed '+pushed+' deliverable contact(s)'},json:true}); }catch(e){} sd.syncJobId=''; }\nreturn [{json:{pushed,batches:chunks.length}}];\n"
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst chunks=$('Build payload').all();\nlet pushed=0; for(const it of chunks){ pushed += ((it.json&&it.json.jsonBody)||[]).length; }\nconst now=new Date().toISOString();\ntry{ const s=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/settings/records',qs:{filter:'key=\"brevo\"',perPage:1},headers:pbH,json:true}); const rec=s.items&&s.items[0]; if(rec){ const v=rec.value||{}; v.last_sync=now; await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/settings/records/'+rec.id,headers:pbH,body:{value:v},json:true}); } }catch(e){}\nconst sd=$getWorkflowStaticData('global');\nconst removed=sd.syncRemoved||0, captured=sd.syncCaptured||0;\nif(sd.syncJobId){ try{ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/job_runs/records/'+sd.syncJobId,headers:pbH,body:{status:'done',finished:now,processed:pushed,total:(sd.syncTotal||pushed),message:'Pushed '+pushed+' · removed '+removed+' · blocklist-captured '+captured},json:true}); }catch(e){} sd.syncJobId=''; }\nreturn [{json:{pushed,removed,captured}}];"
       },
       "id": "finish",
       "name": "Finish",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        440,
+        1500,
         0
       ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"started\": true, \"note\": \"Sync is reconciling list membership in the background; progress shows in Activity.\" } }}",
+        "options": {}
+      },
+      "id": "resp",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return [{json:{path:'/v3/contacts/lists/'+($getWorkflowStaticData('global').syncListId)+'/contacts'}}];"
+      },
+      "id": "afterpush",
+      "name": "After push",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.brevo.com{{ $json.path }}?limit=1",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "lcount",
+      "name": "Count",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_BREVO_CRED",
+          "name": "Brevo (api)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const cnt=Number(($json&&$json.count)||0);\nconst path=((($('After push').first()||{}).json)||{}).path;\nconst pages=Math.ceil(cnt/500);\nconst out=[]; for(let i=0;i<pages;i++){ out.push({json:{path, offset:i*500}}); }\nif(!out.length) out.push({json:{path, offset:0}});\nreturn out;"
+      },
+      "id": "loffsets",
+      "name": "Make offsets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.brevo.com{{ $json.path }}?limit=500&offset={{ $json.offset }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 350
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "lpage",
+      "name": "List page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_BREVO_CRED",
+          "name": "Brevo (api)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 2500
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst pages=$input.all();\nconst members=new Map();\nfor(const p of pages){ const cs=(p.json&&p.json.contacts)||[]; for(const c of cs){ if(c&&c.email){ members.set(String(c.email).trim().toLowerCase(), c.emailBlacklisted===true); } } }\nconst sd=$getWorkflowStaticData('global');\nconst eligible=sd.eligible||{}; const listId=sd.syncListId;\n// capture blocklist: members Brevo flags -> mark in our DB (if not already)\nconst black=[...members.entries()].filter(function(e){return e[1];}).map(function(e){return e[0];});\nlet captured=0;\nfor(let i=0;i<black.length;i+=25){ await Promise.all(black.slice(i,i+25).map(async function(e){ try{ const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs:{filter:'email=\"'+e+'\"',perPage:1,fields:'id,blocklisted'},headers:pbH,json:true}); const rec=r.items&&r.items[0]; if(rec&&rec.blocklisted!==true){ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/contacts/records/'+rec.id,headers:pbH,body:{blocklisted:true},json:true}); captured++; } }catch(e2){} }.bind(this))); }\n// removals: list members no longer eligible\nconst toRemove=[...members.keys()].filter(function(e){return !eligible[e];});\nsd.syncMembers=members.size; sd.syncRemoved=toRemove.length; sd.syncCaptured=captured;\nconst out=[];\nfor(let i=0;i<toRemove.length;i+=150){ out.push({json:{listId, emails:toRemove.slice(i,i+150)}}); }\nif(!out.length) out.push({json:{listId, emails:[]}});\nreturn out;"
+      },
+      "id": "lrecon",
+      "name": "Reconcile",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1140,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.brevo.com/v3/contacts/lists/{{ $json.listId }}/contacts/remove",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ emails: $json.emails }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 350
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "lremove",
+      "name": "Remove from list",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_BREVO_CRED",
+          "name": "Brevo (api)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 2500
     }
   ],
   "connections": {
@@ -168,7 +329,7 @@
       "main": [
         [
           {
-            "node": "Config",
+            "node": "Respond",
             "type": "main",
             "index": 0
           }
@@ -231,6 +392,83 @@
       ]
     },
     "Brevo import": {
+      "main": [
+        [
+          {
+            "node": "After push",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "After push": {
+      "main": [
+        [
+          {
+            "node": "Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Count": {
+      "main": [
+        [
+          {
+            "node": "Make offsets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Make offsets": {
+      "main": [
+        [
+          {
+            "node": "List page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List page": {
+      "main": [
+        [
+          {
+            "node": "Reconcile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reconcile": {
+      "main": [
+        [
+          {
+            "node": "Remove from list",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove from list": {
       "main": [
         [
           {

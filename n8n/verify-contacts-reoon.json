@@ -13,7 +13,7 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -900,
+        -1100,
         0
       ],
       "webhookId": "verify-contacts-reoon"
@@ -29,7 +29,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        -740,
+        -940,
         0
       ]
     },
@@ -52,7 +52,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -580,
+        -780,
         0
       ]
     },
@@ -69,7 +69,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -420,
+        -620,
         0
       ],
       "credentials": {
@@ -83,53 +83,91 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst body=($('Webhook').first().json.body)||{};\nconst force = body.force === true;\nlet mode='power', reverifyDays=90;\ntry{ const s=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/settings/records',qs:{filter:'key=\"reoon\"',perPage:1},headers:pbH,json:true}); const v=(s.items&&s.items[0]&&s.items[0].value)||{}; if(v.mode)mode=v.mode; if(v.reverify_days!=null)reverifyDays=v.reverify_days; }catch(e){}\nconst cutoffMs = Date.now() - (reverifyDays*86400000);\nlet contacts=[];\nif(Array.isArray(body.ids) && body.ids.length){\n  for(const id of body.ids){ try{ const c=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records/'+id,headers:pbH,json:true}); contacts.push(c); }catch(e){} }\n} else {\n  const filter=body.filter||''; let page=1;\n  while(true){ const qs=Object.assign({perPage:500,page,fields:'id,email,verified_at,verification_status,blocklisted'},filter?{filter}:{}); const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs,headers:pbH,json:true}); contacts=contacts.concat(r.items||[]); if(page>=(r.totalPages||1))break; page++; }\n}\nconst out=[]; const seen=new Set();\nconst settled={verified:1,undeliverable:1,catch_all:1};\nfor(const c of contacts){\n  if(!c.email||seen.has(c.email)) continue;\n  if(c.blocklisted===true) continue;\n  const vAt=c.verified_at? new Date(String(c.verified_at).replace(' ','T')).getTime():0;\n  if(!force && vAt && vAt>cutoffMs && settled[c.verification_status]) continue;\n  seen.add(c.email); out.push({json:{id:c.id,email:c.email,mode}});\n}\n// --- job_runs: open the run so the UI shows live progress ---\nconst sd=$getWorkflowStaticData('global'); const now=new Date().toISOString();\nlet jobId='';\ntry{ const j=await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/job_runs/records',headers:pbH,body:{kind:'verify-reoon',label:'Verify emails (Reoon)',status:'running',total:out.length,processed:0,started:now},json:true}); jobId=j.id; }catch(e){}\nsd.verifyJobId=jobId; sd.verifyProcessed=0; sd.verifyTotal=out.length;\nreturn out;\n"
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst body=($('Webhook').first().json.body)||{};\nconst force = body.force === true;\nlet reverifyDays=90;\ntry{ const s=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/settings/records',qs:{filter:'key=\"reoon\"',perPage:1},headers:pbH,json:true}); const v=(s.items&&s.items[0]&&s.items[0].value)||{}; if(v.reverify_days!=null)reverifyDays=v.reverify_days; }catch(e){}\nconst cutoffMs = Date.now() - (reverifyDays*86400000);\nlet contacts=[];\nif(Array.isArray(body.ids) && body.ids.length){\n  for(const id of body.ids){ try{ const c=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records/'+id,headers:pbH,json:true}); contacts.push(c); }catch(e){} }\n} else {\n  const filter=body.filter||''; let page=1;\n  while(true){ const qs=Object.assign({perPage:500,page,fields:'id,email,verified_at,verification_status,blocklisted'},filter?{filter}:{}); const r=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/contacts/records',qs,headers:pbH,json:true}); contacts=contacts.concat(r.items||[]); if(page>=(r.totalPages||1))break; page++; }\n}\nconst seen=new Set();\nconst settled={verified:1,undeliverable:1,catch_all:1,mx_only:1};\nconst emails=[]; const map={};\nfor(const c of contacts){\n  if(!c.email||seen.has(c.email)) continue;\n  if(c.blocklisted===true) continue;\n  const vAt=c.verified_at? new Date(String(c.verified_at).replace(' ','T')).getTime():0;\n  if(!force && vAt && vAt>cutoffMs && settled[c.verification_status]) continue;\n  const em=String(c.email).trim(); if(!em) continue;\n  seen.add(c.email); emails.push(em); map[em.toLowerCase()]=c.id;\n}\nconst MAX=50000; let truncated=0;\nif(emails.length>MAX){ truncated=emails.length-MAX; emails.length=MAX; }\nconst sd=$getWorkflowStaticData('global'); const now=new Date().toISOString();\nlet jobId='';\ntry{ const j=await this.helpers.httpRequest({method:'POST',url:PB_URL+'/api/collections/job_runs/records',headers:pbH,body:{kind:'verify-reoon',label:'Verify emails (Reoon)',status:'running',total:emails.length,processed:0,started:now,message:'Submitting to Reoon…'},json:true}); jobId=j.id; }catch(e){}\nsd.verifyJobId=jobId; sd.verifyTotal=emails.length; sd.verifyMap=map; sd.verifyPoll=0; sd.verifyWritten=0;\nif(!emails.length){ if(jobId){ try{ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/job_runs/records/'+jobId,headers:pbH,body:{status:'done',finished:now,processed:0,message:'Nothing to verify'},json:true}); }catch(e){} sd.verifyJobId=''; } return []; }\nconst name='leblovina-verify-'+now;\nreturn [{json:{name, emails, truncated}}];\n"
       },
       "id": "pick",
       "name": "Pick contacts",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -240,
+        -460,
         0
       ]
     },
     {
       "parameters": {
-        "batchSize": 100,
-        "options": {}
-      },
-      "id": "loop",
-      "name": "Loop",
-      "type": "n8n-nodes-base.splitInBatches",
-      "typeVersion": 3,
-      "position": [
-        -40,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "url": "=https://emailverifier.reoon.com/api/v1/verify?email={{ encodeURIComponent($json.email) }}&mode={{ $json.mode }}",
+        "method": "POST",
+        "url": "https://emailverifier.reoon.com/api/v1/create-bulk-verification-task/",
         "authentication": "genericCredentialType",
-        "genericAuthType": "httpQueryAuth",
+        "genericAuthType": "httpCustomAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { name: $json.name, emails: $json.emails } }}",
         "options": {
           "timeout": 30000
         }
       },
-      "id": "reoon",
-      "name": "Reoon verify",
+      "id": "create",
+      "name": "Create task",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        220,
-        120
+        -280,
+        0
       ],
-      "onError": "continueRegularOutput",
       "credentials": {
-        "httpQueryAuth": {
+        "httpCustomAuth": {
           "id": "REPLACE_REOON_CRED",
-          "name": "Reoon (api)"
+          "name": "Reoon (bulk)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 20,
+        "unit": "seconds"
+      },
+      "id": "wait",
+      "name": "Wait",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -100,
+        0
+      ],
+      "webhookId": "reoon-bulk-wait"
+    },
+    {
+      "parameters": {
+        "url": "https://emailverifier.reoon.com/api/v1/get-result-bulk-verification-task/",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "task_id",
+              "value": "={{ $('Create task').first().json.task_id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "getres",
+      "name": "Get result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        80,
+        0
+      ],
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "REPLACE_REOON_CRED",
+          "name": "Reoon (bulk)"
         }
       }
     },
@@ -137,29 +175,78 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst batch=$('Loop').all();\nconst results=$input.all();\nconst now=new Date().toISOString();\nfunction mapStatus(s){ s=(s||'').toString().toLowerCase();\n  if(s==='safe'||s==='role_account') return 'verified';\n  if(s==='catch_all') return 'catch_all';\n  if(['invalid','disabled','disposable','spamtrap','inbox_full','undeliverable'].includes(s)) return 'undeliverable';\n  return 'unknown'; }\nconst tasks=[];\nfor(let i=0;i<batch.length;i++){ const id=batch[i].json.id; const r=(results[i]&&results[i].json)||{}; tasks.push({id, vs:mapStatus(r.status)}); }\nfor(let i=0;i<tasks.length;i+=25){ await Promise.all(tasks.slice(i,i+25).map(t=>this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/contacts/records/'+t.id,headers:pbH,body:{verification_status:t.vs,verified_at:now},json:true}).catch(()=>{}))); }\n// --- job_runs heartbeat ---\nconst sd=$getWorkflowStaticData('global');\nif(sd.verifyJobId){ try{ sd.verifyProcessed=(sd.verifyProcessed||0)+batch.length; await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/job_runs/records/'+sd.verifyJobId,headers:pbH,body:{processed:sd.verifyProcessed,message:'verifying…'},json:true}); }catch(e){} }\nreturn $input.all();\n"
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst r=$json||{};\nconst sd=$getWorkflowStaticData('global');\nsd.verifyPoll=(sd.verifyPoll||0)+1;\nconst status=String(r.status||'');\nconst total=Number(r.count_total||sd.verifyTotal||0);\nconst checked=Number(r.count_checked||0);\nif(sd.verifyJobId){ try{ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/job_runs/records/'+sd.verifyJobId,headers:pbH,body:{processed:checked,total:total,message:'Verifying… '+checked+'/'+total},json:true}); }catch(e){} }\nconst hardFail=['file_not_found','file_loading_error'].includes(status);\nconst timedOut=sd.verifyPoll>180;\nconst done = status==='completed' || hardFail || timedOut;\nreturn [{json:{done, failed:(hardFail||timedOut), status, results:(r.results||{})}}];\n"
       },
-      "id": "write",
-      "name": "Write back",
+      "id": "polltick",
+      "name": "Poll tick",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        460,
-        120
+        260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.done }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ifdone",
+      "name": "IF done?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        0
       ]
     },
     {
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst now=new Date().toISOString();\ntry{ const s=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/settings/records',qs:{filter:'key=\"reoon\"',perPage:1},headers:pbH,json:true}); const rec=s.items&&s.items[0]; if(rec){ const v=rec.value||{}; v.last_run=now; await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/settings/records/'+rec.id,headers:pbH,body:{value:v},json:true}); } }catch(e){}\n// --- job_runs: close the run ---\nconst sd=$getWorkflowStaticData('global');\nif(sd.verifyJobId){ try{ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/job_runs/records/'+sd.verifyJobId,headers:pbH,body:{status:'done',finished:now,processed:(sd.verifyProcessed||sd.verifyTotal||0),message:'Verification complete'},json:true}); }catch(e){} sd.verifyJobId=''; }\nreturn [{json:{done:true,verified_at:now}}];\n"
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst sd=$getWorkflowStaticData('global');\nconst map=sd.verifyMap||{};\nconst results=($json && $json.results)||{};\nconst now=new Date().toISOString();\nfunction mapStatus(r){ const s=((r&&r.status)||'').toString().toLowerCase();\n  if(s==='safe'||s==='role_account') return 'verified';\n  if(s==='catch_all') return 'catch_all';\n  if(['invalid','disabled','disposable','spamtrap','inbox_full','undeliverable'].includes(s)) return 'undeliverable';\n  if(s==='unknown' && r && r.mx_accepts_mail===true && r.is_valid_syntax!==false) return 'mx_only';\n  return 'unknown'; }\nconst tasks=[];\nfor(const em of Object.keys(results)){ const id=map[String(em).toLowerCase()]; if(!id) continue; tasks.push({id, vs:mapStatus(results[em]||{})}); }\nlet written=0;\nfor(let i=0;i<tasks.length;i+=25){ await Promise.all(tasks.slice(i,i+25).map(t=>this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/contacts/records/'+t.id,headers:pbH,body:{verification_status:t.vs,verified_at:now},json:true}).then(()=>{written++;}).catch(()=>{}))); }\nsd.verifyWritten=written;\nreturn [{json:{written, failed: ($json && $json.failed)===true}}];\n"
+      },
+      "id": "write",
+      "name": "Write back",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        620,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const PB_URL=($('Config').first().json.pbUrl||'').replace(/\\/+$/,'');\nconst token=$('PB Auth').first().json.token; const pbH={Authorization:token};\nconst now=new Date().toISOString();\ntry{ const s=await this.helpers.httpRequest({method:'GET',url:PB_URL+'/api/collections/settings/records',qs:{filter:'key=\"reoon\"',perPage:1},headers:pbH,json:true}); const rec=s.items&&s.items[0]; if(rec){ const v=rec.value||{}; v.last_run=now; await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/settings/records/'+rec.id,headers:pbH,body:{value:v},json:true}); } }catch(e){}\nconst sd=$getWorkflowStaticData('global');\nconst written=sd.verifyWritten||0;\nconst failed=($json && $json.failed)===true;\nif(sd.verifyJobId){ try{ await this.helpers.httpRequest({method:'PATCH',url:PB_URL+'/api/collections/job_runs/records/'+sd.verifyJobId,headers:pbH,body:{status:(failed?'error':'done'),finished:now,processed:written,message:(failed?'Reoon task did not complete (timed out)':('Verified '+written+' contact(s)'))},json:true}); }catch(e){} sd.verifyJobId=''; }\nreturn [{json:{done:true, written}}];\n"
       },
       "id": "finish",
       "name": "Finish",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        220,
+        800,
         -120
       ]
     }
@@ -213,36 +300,69 @@
       "main": [
         [
           {
-            "node": "Loop",
+            "node": "Create task",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Loop": {
+    "Create task": {
       "main": [
         [
           {
-            "node": "Finish",
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Get result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get result": {
+      "main": [
+        [
+          {
+            "node": "Poll tick",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll tick": {
+      "main": [
+        [
+          {
+            "node": "IF done?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF done?": {
+      "main": [
+        [
+          {
+            "node": "Write back",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Reoon verify",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Reoon verify": {
-      "main": [
-        [
-          {
-            "node": "Write back",
+            "node": "Wait",
             "type": "main",
             "index": 0
           }
@@ -253,7 +373,7 @@
       "main": [
         [
           {
-            "node": "Loop",
+            "node": "Finish",
             "type": "main",
             "index": 0
           }

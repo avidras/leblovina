@@ -69,7 +69,10 @@ export const clubTypeLabel = (s: string | null | undefined) => lookup(CLUB_TYPE_
 
 const VERIFICATION_LABELS: Record<string, string> = {
   unverified: 'Unverified',
-  mx_only: 'MX only',
+  // mx_only = we tried to verify, the domain accepts mail + syntax is valid, but the provider
+  // blocks SMTP probing so the specific mailbox can't be confirmed. Treated as deliverable
+  // (sent to Brevo). See specs/brevo-reoon-integration.md.
+  mx_only: 'Unable to verify',
   verified: 'Verified',
   catch_all: 'Catch-all',
   undeliverable: 'Undeliverable',

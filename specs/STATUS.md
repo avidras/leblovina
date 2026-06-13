@@ -16,8 +16,9 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > `specs/brevo-reoon-integration.md`. Deployed: prod migration applied (club optional, source_type
 > +brevo, settings brevo/reoon), delete hook + Contacts UI shipped. n8n live ids: verify
 > `7EzGsk9i4T0C5ucI`, sync `QAejl1NsI2tPHl6m`, delete `UHF9YJEN4VJDNrTk`, backfill `3ZMjHBO2fQPkCqbX`
-> (all active). Creds: `Brevo (api)` `oIxwF9CXYhqzmPEu` (Header `api-key`), `Reoon (api)`
-> `LQSDbLgzUaEW1WDk` (Query `key`). Push target = **new dedicated Brevo list "App – verified leads"
+> (all active). Creds: `Brevo (api)` `oIxwF9CXYhqzmPEu` (Header `api-key`), `Reoon (bulk)`
+> `r6UvWkd8oLN8jij0` (Custom Auth, `key` in body+qs; replaced the old query-auth `Reoon (api)`
+> `LQSDbLgzUaEW1WDk` when verify moved to the bulk API — see below). Push target = **new dedicated Brevo list "App – verified leads"
 > id 12** (`settings.brevo.list_id=12`); backfill pulls the **whole account** (Brevo is 6
 > region-segmented lists ~8.2k subs). **Verify workflow redesigned (2026-06-11):** a sync run over
 > 13,602 contacts 500'd (sequential write-back hit the 60s Code cap; webhook held open). Now: webhook
@@ -26,6 +27,28 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > rewritten). Skip-window now applies only to SETTLED
 > results (verified/undeliverable/catch_all); transient `unknown`/`unverified` are always
 > re-checked (2026-06-11). Catch-all verification badge = orange.
+> **Verify moved to Reoon BULK API (2026-06-13):** the per-item real-time loop was getting
+> **429-rate-limited and 30s-timed-out**, and those failures were silently written back as
+> `unknown` (with `verified_at` stamped) — so re-runs churned the same ~2k stuck addresses
+> forever (looked like "it stops after ~100-200"). Rebuilt `verify-contacts-reoon` to submit one
+> bulk task (≤50k, power mode) → Wait-loop poll → write back. Needed the key in the POST body, so
+> a new `Reoon (bulk)` Custom Auth cred injects `key` into body+qs. Smoke-tested live (2 contacts
+> green end-to-end), then ran the full Unknown set. See `specs/reoon-bulk-verification.md`.
+> **`mx_only` = "Unable to verify" → sendable (2026-06-13):** the clean bulk run still returned
+> `unknown` for ~918/935, but ~870 had `mx_accepts_mail=true` + valid syntax (freemail/ISP that
+> block SMTP probing — wp.pl/t-online.de/outlook.fr; real addresses). Now mapped to `mx_only`
+> (labelled "Unable to verify", blue badge), added to the **Brevo gate** and the verify
+> settled-cooldown. Reclassified the 870 existing rows from the run data (no re-spend). Contacts
+> page gained a **"Brevo-eligible (deliverable)"** verification filter = the exact send set
+> (verified|catch_all|mx_only, not blocklisted). Eligible now **15,113** (genuine `unknown` 1,130).
+> **Sync → two-way reconcile (2026-06-13):** `sync-contacts-brevo` was add-only; now it also
+> **captures unsubscribes/spam** from Brevo into our DB and **removes from list 12** anyone no
+> longer eligible (blocklisted/undeliverable/…), so the list == the sendable set. Added
+> After-push→Count→offsets→List-page (paginate list members, 500/page) → Reconcile (capture
+> blocklist + compute removals) → Remove-from-list (batch ≤150). Brevo paging/remove/import nodes
+> need **batching (1/350ms) + retry** (Brevo 429s on rapid requests). Webhook now async
+> (`responseNode`). See `specs/brevo-sync-reconcile.md`. Decision: blocklisted are removed from the
+> list (Brevo suppresses them account-wide regardless; unsubscribe history is preserved).
 > **Backfill fixed (2026-06-11):** n8n built-in pagination re-fetched page 0 ("identical response 5×"
 > abort); replaced with deterministic Count→offsets→per-page paging + async response. Ran on prod:
 > 8,004 Brevo contacts → 7,010 imported as source_type='brevo' (~994 already existed, skipped). DB
@@ -51,7 +74,7 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > Job tick/Job done nodes — they had no PB auth), site-scrape-driver (dispatch job). Cron drains
 > left to their queue panels by design. UI ships on next Coolify deploy.
 > Decisions: Reoon verify = manual button; Brevo gate =
-> `verification_status` in (`verified`, `catch_all`) — both deliverable; Brevo delete = hard-delete via PB
+> `verification_status` in (`verified`, `catch_all`, `mx_only`) — all deliverable; Brevo delete = hard-delete via PB
 > hook; attrs NAME/CLUB/COUNTRY/QUALITY; backfill imports Brevo→PB as `source_type='brevo'`
 > (email-only, no club). Built: migration `1780656100_brevo_reoon.js` (club→optional, source_type
 > +`brevo`, seeds `settings.brevo`/`settings.reoon`); hook `pb_hooks/brevo_contact_delete.pb.js`;

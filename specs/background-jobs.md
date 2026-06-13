@@ -59,7 +59,8 @@ items.
 
 ### Instrumented (done)
 - **`verify-contacts-reoon`** — full live progress: `Pick contacts` opens the run (total = #
-  contacts), `Write back` heartbeats `processed += batch` per batch, `Finish` closes it. *(Verified
+  emails submitted), `Poll tick` heartbeats `processed = count_checked` on each bulk poll, `Finish`
+  closes it. *(Reworked for the Reoon bulk API — see `specs/reoon-bulk-verification.md`. Verified
   end-to-end: a run produced a `running`→`done` record with the right counts.)*
 - **`sync-contacts-brevo`** — opens at `Build payload` (total = # verified), closes at `Finish`
   (processed = # pushed); empty run self-closes.

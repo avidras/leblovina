@@ -41,13 +41,24 @@ function andFilter(...clauses: (string | false | undefined)[]): string {
   return clauses.filter(Boolean).map((c) => `(${c})`).join(' && ')
 }
 
+// Pseudo verification-filter value (not a DB enum) for the combined Brevo-eligible set.
+const DELIVERABLE_FILTER = 'deliverable'
+
 // `unknown`-style defaults mirror the old client-side `(x || 'unverified')` /
 // `(x || 'directory')` defaulting. `q` searches across contact + related-club fields.
 function buildContactsFilter(f: { club: string; country: string; vs: string; src: string; block: string; q: string }): string {
   return andFilter(
     f.club && pb.filter('club = {:v}', { v: f.club }),
     f.country && pb.filter('club.country = {:v}', { v: f.country }),
-    f.vs && (f.vs === 'unverified' ? "verification_status = 'unverified' || verification_status = ''" : pb.filter('verification_status = {:v}', { v: f.vs })),
+    f.vs && (
+      // "deliverable" = the exact Brevo gate: verified | catch_all | mx_only, and not blocklisted.
+      // Lets you see who actually qualifies to be sent, instead of one status at a time.
+      f.vs === DELIVERABLE_FILTER
+        ? '(verification_status = "verified" || verification_status = "catch_all" || verification_status = "mx_only") && blocklisted != true'
+        : f.vs === 'unverified'
+          ? "verification_status = 'unverified' || verification_status = ''"
+          : pb.filter('verification_status = {:v}', { v: f.vs })
+    ),
     f.src && (f.src === 'directory' ? "source_type = 'directory' || source_type = ''" : pb.filter('source_type = {:v}', { v: f.src })),
     // blocklisted = unsubscribed/spam (mirrors Brevo). 'hide' is the typical view; 'only' to audit.
     f.block === 'hide' ? 'blocklisted != true' : f.block === 'only' ? 'blocklisted = true' : false,
@@ -141,16 +152,17 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
   // on-screen filter. Re-runs the gaps without re-spending on already verified/undeliverable/catch-all.
   // (Blocklisted contacts are skipped server-side.)
   function verifyPending() {
-    if (!window.confirm('Verify only the pending contacts (unknown / unverified / never-checked)? Already-settled (verified/undeliverable/catch-all) and blocklisted contacts are skipped.')) return
+    if (!window.confirm('Verify only the pending contacts (unknown / unverified / never-checked)? Already-settled (verified/undeliverable/catch-all/unable-to-verify) and blocklisted contacts are skipped.')) return
     const pending = 'verification_status="unknown" || verification_status="unverified" || verification_status=""'
     runAction('Verifying pending contacts via Reoon…', () => triggerVerifyContacts({ filter: pending }))
   }
 
-  // Push ALL deliverable contacts (Reoon "verified" or "catch-all") to Brevo — ignores the
-  // on-screen filter by design (the deliverability gate, not the view, decides who is sent).
+  // Two-way reconcile: push deliverable (verified / catch-all / unable-to-verify), capture
+  // unsubscribes/spam from Brevo into our DB, and REMOVE from the list anyone no longer eligible.
+  // Ignores the on-screen filter by design (the gate, not the view, decides who is sent).
   function syncToBrevo() {
-    if (!window.confirm('Push all deliverable contacts to the Brevo list? Contacts Reoon marked "verified" or "catch-all" are sent; existing Brevo contacts are updated.')) return
-    runAction('Syncing deliverable contacts to Brevo…', () => triggerBrevoSync())
+    if (!window.confirm('Reconcile the Brevo list with our deliverable set? Pushes verified / catch-all / unable-to-verify contacts, captures new unsubscribes/spam back into our DB, and removes anyone no longer eligible (blocklisted, undeliverable…) from the list.')) return
+    runAction('Reconciling Brevo list…', () => triggerBrevoSync())
   }
 
   // Import Brevo contacts (email only, source=Brevo) AND refresh blocklist status. Idempotent.
@@ -211,8 +223,9 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
               <option key={s} value={s}>{sourceTypeLabel(s)}</option>
             ))}
           </Select>
-          <Select className="w-full" active={!!vsFilter} value={vsFilter} onChange={(e) => { setVsFilter(e.target.value); resetPage() }}>
+          <Select className="w-full" active={!!vsFilter} value={vsFilter} onChange={(e) => { setVsFilter(e.target.value); resetPage() }} title="Filter by verification — “Brevo-eligible” = the exact set that gets sent (verified / catch-all / unable-to-verify, not blocklisted)">
             <option value="">Any verification</option>
+            <option value={DELIVERABLE_FILTER}>Brevo-eligible (deliverable)</option>
             {VERIFICATION_STATUSES.map((s) => (
               <option key={s} value={s}>{verificationLabel(s)}</option>
             ))}
@@ -244,13 +257,13 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
           }, {
             key: 'verify-pending',
             label: 'Verify pending only (Reoon)',
-            description: 'Verify only the not-yet-settled contacts (unknown / unverified / never-checked), ignoring the on-screen filter. Skips already verified/undeliverable/catch-all and blocklisted — no wasted credits.',
+            description: 'Verify only the not-yet-settled contacts (unknown / unverified / never-checked), ignoring the on-screen filter. Skips already verified/undeliverable/catch-all/unable-to-verify and blocklisted — no wasted credits.',
             disabled: actionBusy,
             onSelect: verifyPending,
           }, {
             key: 'sync-brevo',
-            label: 'Sync deliverable to Brevo',
-            description: 'Push ALL deliverable contacts (Reoon "verified" or "catch-all") to the Brevo newsletter list, updating existing ones. Ignores the on-screen filter by design.',
+            label: 'Reconcile Brevo list',
+            description: 'Two-way sync: push ALL deliverable contacts (verified / catch-all / unable-to-verify), capture new unsubscribes/spam from Brevo into our DB, and remove anyone no longer eligible from the list — so the list matches our sendable set. Ignores the on-screen filter by design.',
             disabled: actionBusy,
             onSelect: syncToBrevo,
           }, {
@@ -319,7 +332,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
                 </TD>
                 <TD>
                   <div className="flex flex-wrap items-center gap-1">
-                    <Badge tone={c.verification_status === 'verified' ? 'green' : c.verification_status === 'catch_all' ? 'orange' : 'neutral'}>
+                    <Badge tone={c.verification_status === 'verified' ? 'green' : c.verification_status === 'catch_all' ? 'orange' : c.verification_status === 'mx_only' ? 'blue' : 'neutral'}>
                       {verificationLabel(c.verification_status || 'unverified')}
                     </Badge>
                     {c.blocklisted && <Badge tone="red" title="Unsubscribed / spam in Brevo — excluded from sync, verification and export">Blocklisted</Badge>}
@@ -361,7 +374,7 @@ function ContactDetailDialog({ contact, onClose, onDelete }: { contact: Contact 
         contact && (
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base font-semibold text-neutral-900">{contact.email}</h2>
-            <Badge tone={contact.verification_status === 'verified' ? 'green' : contact.verification_status === 'catch_all' ? 'orange' : 'neutral'}>
+            <Badge tone={contact.verification_status === 'verified' ? 'green' : contact.verification_status === 'catch_all' ? 'orange' : contact.verification_status === 'mx_only' ? 'blue' : 'neutral'}>
               {verificationLabel(contact.verification_status || 'unverified')}
             </Badge>
             {contact.blocklisted && <Badge tone="red" title="Unsubscribed / spam in Brevo — excluded from sync, verification and export">Blocklisted</Badge>}

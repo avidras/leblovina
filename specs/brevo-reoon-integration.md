@@ -28,15 +28,17 @@ them via webhooks and a PocketBase delete hook, exactly like every other pipelin
 | # | Decision | Choice | Rationale |
 |---|----------|--------|-----------|
 | 1 | Reoon verify trigger | **Manual button** | Reoon bills per email; the team decides when to spend credits. Auto-on-new would burn credits continuously as scraping adds thousands of contacts. Skips recently-verified rows (domain rule #3). |
-| 2 | Brevo deliverability gate | **Deliverable** (`verification_status='verified'` **or** `'catch_all'`) | "Don't send non-deliverable emails." Reoon-confirmed `verified` **and** `catch_all` (domain accepts mail; treated as deliverable) go to Brevo. `unknown`/`unverified`/`undeliverable` are held back until verified. Protects sender reputation. |
+| 2 | Brevo deliverability gate | **Deliverable** = `verification_status` ∈ {`verified`, `catch_all`, `mx_only`} | "Don't send non-deliverable emails." `verified`, `catch_all` (domain accepts mail), and `mx_only` ("Unable to verify" — domain accepts mail + valid syntax, but the provider blocks SMTP probing, e.g. `wp.pl`/`t-online.de`; the addresses are almost all real, so we send them rather than discard real leads) all go to Brevo. `unknown` (no MX / malformed), `unverified`, `undeliverable` are held back. Protects sender reputation. |
 | 3 | Brevo push trigger | **Manual button** | Same as verification — explicit, controlled. Deletes still propagate automatically (see #4) so we never email a removed contact. |
 | 4 | Delete semantics | **Hard-delete in Brevo**, propagated **automatically** via a PocketBase delete hook | One source of truth: gone here = gone there. The hook catches deletes from *anywhere* (UI, PB admin, API), not just a UI button. |
 | 5 | Brevo attributes | **NAME, CLUB, COUNTRY, QUALITY** (besides EMAIL) | Enough for personalization + geographic/quality segmentation of campaigns. |
 | 6 | Backfill provenance | `source_type='brevo'`, **no club**, email only | Brevo has no club data; import as bare emails so we hold one row per address. Idempotent on the `email` unique index — re-running creates nothing new. |
 
 > **Supersedes:** an earlier draft answer set the Brevo scope to "all contacts." The Reoon gate
-> (#2) replaces it — the push filter is `(verification_status='verified' || verification_status='catch_all') && blocklisted!=true`.
-> (`catch_all` was later added to the gate: a catch-all domain accepts mail, so we treat it as deliverable.)
+> (#2) replaces it — the push filter is
+> `(verification_status='verified' || verification_status='catch_all' || verification_status='mx_only') && blocklisted!=true`.
+> (`catch_all` and later `mx_only` were added: both mean the domain accepts mail, so we treat them
+> as deliverable rather than discard real leads.)
 
 ## Schema changes
 
@@ -70,7 +72,7 @@ collection — we extend `contacts` and seed two `settings` rows.
 
 ## Reoon → `verification_status` mapping
 
-Reoon's `power`-mode single/bulk result carries a per-email `status` (and an
+Reoon's `power`-mode bulk result carries a per-email `status` (and an
 `overall_result`/`is_deliverable`). Map to our enum:
 
 | Reoon status | our `verification_status` | goes to Brevo? |
@@ -78,7 +80,8 @@ Reoon's `power`-mode single/bulk result carries a per-email `status` (and an
 | `safe` (deliverable) | `verified` | **yes** |
 | `role_account` (deliverable role addr, e.g. info@) | `verified` | yes |
 | `catch_all` | `catch_all` | **yes** (gate #2 — domain accepts mail) |
-| `unknown` / temporary failure | `unknown` | no |
+| `unknown` **+ `mx_accepts_mail` + valid syntax** | `mx_only` ("Unable to verify") | **yes** (gate #2 — domain accepts mail, provider blocks SMTP probing) |
+| `unknown` (no MX / malformed) | `unknown` | no |
 | `invalid` / `disabled` / `disposable` / `spamtrap` / `inbox_full` | `undeliverable` | no |
 
 Every verified row also sets `verified_at = now`. We never invent or alter the email itself
@@ -93,53 +96,53 @@ Request nodes** (Code nodes can't use n8n credentials — same constraint as Ser
 Credentials (created once in n8n; **never committed**):
 - **`Brevo (api)`** — generic `httpHeaderAuth`, header `api-key: <BREVO_API_KEY>`. Base
   `https://api.brevo.com`.
-- **`Reoon (api)`** — generic `httpQueryAuth`, query param `key=<REOON_API_KEY>`. Base
-  `https://emailverifier.reoon.com`.
+- **`Reoon (bulk)`** — generic `httpCustomAuth` injecting `key` into both the request **body**
+  (bulk-create needs it there) and **query** (bulk-poll reads it there). Base
+  `https://emailverifier.reoon.com`. *(Replaced the old `Reoon (api)` query-auth credential when
+  we moved off the real-time endpoint.)*
 
 ### 1. `verify-contacts-reoon` (webhook `verify-contacts-reoon`)
 Manual "Verify emails" button. Body `{ ids?, filter?, force? }` (omit → all not-recently-verified).
-**Async, batched** — built to chew through the full ~15k-contact table without timing out:
-1. **Webhook (`responseMode: responseNode`) → Respond** `{started:true}` **immediately**, then keep
-   running in the background. The UI never waits (a synchronous run over 15k emails was the
-   original 500: the webhook held the connection open for the whole job).
-2. **PB Auth**.
-3. **Code "Pick contacts"**: read `settings.reoon` (`reverify_days`). Resolve the target set
-   (`ids` → those; `filter` → page `contacts` by filter; else all). Drop any verified within
-   `reverify_days` unless `force` — **but the skip-window applies only to SETTLED results
-   (`verified`/`undeliverable`/`catch_all`); transient `unknown`/`unverified` are always
-   re-checked** (an `unknown` is usually a temporary SMTP/greylist failure worth retrying). Emit
-   **one item per contact** `{id,email,mode}` (deduped on email).
-4. **`Loop` (Split In Batches, size 100)** — the spine. Each iteration:
-   - **HTTP "Reoon verify"** (credential `Reoon (api)`, `onError: continueRegularOutput`): runs
-     per item — `GET /api/v1/verify?email=…&mode=…` (key injected as a query param by the cred).
-   - **Code "Write back"**: zip the batch's `{id}` (from `$('Loop')`) with the Reoon responses
-     (`$input`) by index, map status (table above), and PATCH the 100 contacts
-     `{verification_status, verified_at}` **concurrently** (chunks of 25 — keeps every Code run
-     well under the 60s cap; the original failure was 13,602 *sequential* PATCHes in one node).
-   - Loop back to `Loop` for the next batch.
-5. **Code "Finish"** (the loop's "done" output): stamp `settings.reoon.last_run`.
+**Async** — responds `{started:true}` immediately and runs in the background.
 
-Progress is visible live in the Contacts table (PB realtime) as each batch writes back. Scope a
-run with the page filter to limit credits/time; `force` re-verifies inside the `reverify_days`
-window. Per-email single verify (not Reoon's bulk-task API) by decision — simplest, and the
-SplitInBatches loop makes it reliable at scale.
+**Now uses Reoon's BULK API** (submit one task → poll → write back), not the per-email
+real-time endpoint. The full design, the rate-limit/timeout bug it fixes, and the node graph
+live in **`specs/reoon-bulk-verification.md`**. In short:
+1. **Webhook (`responseMode: responseNode`) → Respond** `{started:true}` immediately.
+2. **PB Auth → Pick contacts** — same target resolution (`ids` / `filter` / all), dedup on
+   email, drop `blocklisted`, skip SETTLED (`verified`/`undeliverable`/`catch_all`) verified
+   within `reverify_days` unless `force`; `unknown`/`unverified` always re-checked. Opens the
+   `job_runs` row and emits one item `{ name, emails[] }`.
+3. **Create task → Wait (20s) → Get result → Poll tick → IF done?** — submit the whole list as
+   one bulk task (≤50k, power mode), then poll on a Wait loop, heartbeating
+   `job_runs.processed = count_checked` until `status==='completed'`.
+4. **Write back** — map each per-email `results[email].status` (table above) → contact and PATCH
+   `{verification_status, verified_at}` in concurrency-25 chunks.
+5. **Finish** — stamp `settings.reoon.last_run`, close the `job_runs` row.
+
+> The old real-time flow fired per-email with no throttle/retry and got **429-rate-limited and
+> 30s-timed-out**, silently recording those failures as `unknown` — so re-runs churned the same
+> stuck addresses forever. Bulk removes that class of failure (server-side, no per-request limit).
+
+Progress is visible live (PB realtime + the Activity panel). Scope a run with the page filter to
+limit credits/time; `force` re-verifies inside the `reverify_days` window. Verification uses
+Reoon's **bulk-task API** — see `specs/reoon-bulk-verification.md`.
 
 ### 2. `sync-contacts-brevo` (webhook `sync-contacts-brevo`)
-Manual "Sync deliverable to Brevo" button. Body `{}` (syncs **all** eligible) or `{ filter }`.
-1. **PB Auth**.
-2. **Code "Build payload"**: read `settings.brevo.list_id` (error out clearly if unset). Page
-   `contacts` where **`(verification_status='verified' || verification_status='catch_all') && blocklisted!=true`** (AND any incoming
-   `filter`), `expand=club`. Build Brevo rows reusing **Brevo's existing attributes**
-   `{ email, attributes:{ FIRSTNAME, CLUB_NAME, COUNTRY, CITY, QUALITY } }` (FIRSTNAME = contact
-   name; CLUB_NAME = `name_en||name`; COUNTRY/CITY from the club; QUALITY from the contact). COUNTRY
-   drives Brevo's country segments. Chunk into batches (~1000) → one item per chunk:
-   `{ listIds:[list_id], updateExistingContacts:true,
-   jsonBody:[…] }`. Also ensure the four attributes exist (idempotent
-   `POST /v3/contacts/attributes/normal/{NAME|CLUB|COUNTRY|QUALITY}` via an HTTP node, ignoring
-   "already exists").
-3. **HTTP "Brevo import"** (credential `Brevo (api)`, per chunk): `POST /v3/contacts/import` with
-   the chunk body. Upserts (create + update attributes) and adds to the list.
-4. **Code "Finish"**: stamp `settings.brevo.last_sync = now`; return `{ pushed, batches }`.
+Manual "Reconcile Brevo list" button. Body `{}` (all eligible) or `{ filter }`. **Two-way
+reconcile** — pushes eligible, captures unsubscribes/spam from Brevo, and removes from the list
+anyone no longer eligible, so list 12 ends == the sendable set. Full design in
+**`specs/brevo-sync-reconcile.md`**. In short:
+1. **Build payload**: page eligible `contacts`
+   (`(verified || catch_all || mx_only) && blocklisted != true`, AND any incoming `filter`),
+   build Brevo rows `{ email, attributes:{ FIRSTNAME, CLUB_NAME, COUNTRY, CITY, QUALITY } }`,
+   chunk into ~1000 import items, and stash the eligible email set + `list_id` in staticData.
+2. **Brevo import** (`POST /v3/contacts/import`, per chunk): upsert eligible into list 12.
+3. **After push → Count → Make offsets → List page**: paginate list-12 members (incl.
+   `emailBlacklisted`).
+4. **Reconcile**: mark Brevo-flagged members `blocklisted=true` in our DB; remove from list 12
+   every member no longer eligible (batched `POST …/contacts/remove`).
+5. **Finish**: stamp `settings.brevo.last_sync`; report `Pushed N · removed M · blocklist-captured K`.
 
 ### 3. `brevo-contact-delete` (webhook `brevo-contact-delete`)
 Fired by the PB delete hook, **not** a UI button. Body `{ email }`.
@@ -177,7 +180,7 @@ everywhere*, *both* manual + automatic freshness, *reuse Brevo attributes*):
 
 - **Schema:** `contacts.blocklisted` (bool, migration `1780656200_contacts_blocklisted.js`). Kept
   but flagged — never deleted (so a re-scrape/re-import can't silently revive an opt-out).
-- **Excluded everywhere:** the Brevo sync gate is `(verified || catch_all) && blocklisted!=true`; Reoon "Pick
+- **Excluded everywhere:** the Brevo sync gate is `(verified || catch_all || mx_only) && blocklisted!=true`; Reoon "Pick
   contacts" skips blocklisted (no wasted credits); CSV export always filters out blocklisted
   (unless the "Only blocklisted" audit filter is active).
 - **Capture + manual refresh:** `brevo-backfill` now reads `emailBlacklisted` for every Brevo
@@ -230,7 +233,7 @@ detail dialog:
 - **"Verify emails (Reoon)"** → `triggerVerifyContacts({ filter })` → `verify-contacts-reoon`.
   Verifies the current filtered set (or all). Shows returned counts.
 - **"Sync deliverable to Brevo"** → `triggerBrevoSync()` → `sync-contacts-brevo`. Pushes all
-  deliverable (`verified` or `catch_all`) contacts. Description spells out the gate.
+  deliverable (`verified` / `catch_all` / `mx_only`) contacts. Description spells out the gate.
 - **"Import from Brevo (backfill)"** → `triggerBrevoBackfill()` → `brevo-backfill`. One-time; safe
   to re-run (idempotent). A confirm step notes it's a bulk import.
 - **Delete** (in `ContactDetailDialog`): a "Delete contact" button → confirm →
@@ -248,7 +251,8 @@ The contacts table/detail already render `verification_status` (badge) and `sour
 ## Go-live prerequisites (operational — provided by the user, kept out of the repo)
 
 1. **Brevo API key** → create n8n credential `Brevo (api)` (`httpHeaderAuth`, `api-key`).
-2. **Reoon API key** → create n8n credential `Reoon (api)` (`httpQueryAuth`, `key`).
+2. **Reoon API key** → create n8n credential `Reoon (bulk)` (`httpCustomAuth`, JSON
+   `{ "qs": { "key": "…" }, "body": { "key": "…" } }` — bulk-create needs the key in the body).
 3. **Brevo newsletter list id** → set `settings.brevo.list_id` (PB admin).
 4. Then PUT the four workflows live (keep `n8n/` exports in sync) and smoke-test:
    verify a handful → confirm statuses land → sync → confirm they appear in the Brevo list →
@@ -257,8 +261,9 @@ The contacts table/detail already render `verification_status` (badge) and `sour
 ## Out of scope
 
 - Automatic (real-time) verification or Brevo push — both are manual by decision (#1, #3).
-- Pushing `unknown`/`unverified`/`undeliverable` to Brevo — gated out (#2). (`catch_all` is now
-  considered deliverable and **is** pushed.)
+- Pushing `unknown`/`unverified`/`undeliverable` to Brevo — gated out (#2). (`catch_all` and
+  `mx_only` "Unable to verify" are now considered deliverable and **are** pushed — both mean the
+  domain accepts mail.)
 - Two-way attribute sync / pulling Brevo engagement (opens, clicks) back into our DB.
 - Quality (A/B/C) scoring itself — still the separate Phase-4 work; Brevo just forwards whatever
   `quality` is set. Most contacts are unscored today, so QUALITY will often be blank in Brevo.
