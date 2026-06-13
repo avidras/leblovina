@@ -157,9 +157,9 @@ export async function triggerVerifyContacts(
   return postWebhook(VERIFY_CONTACTS_URL, opts)
 }
 
-// Push our proven-deliverable contacts (verification_status='verified') into the Brevo
+// Push our deliverable contacts (verification_status='verified' or 'catch_all') into the Brevo
 // newsletter list (settings.brevo.list_id), upserting attributes. Re-runs update existing
-// Brevo contacts. Pass `filter` to scope; omit to sync all verified. The deliverability gate
+// Brevo contacts. Pass `filter` to scope; omit to sync all deliverable. The deliverability gate
 // is enforced server-side regardless. See specs/brevo-reoon-integration.md.
 export async function triggerBrevoSync(opts: { filter?: string } = {}): Promise<TriggerResult> {
   if (!SYNC_BREVO_URL) {

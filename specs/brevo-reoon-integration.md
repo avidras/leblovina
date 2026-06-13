@@ -28,14 +28,15 @@ them via webhooks and a PocketBase delete hook, exactly like every other pipelin
 | # | Decision | Choice | Rationale |
 |---|----------|--------|-----------|
 | 1 | Reoon verify trigger | **Manual button** | Reoon bills per email; the team decides when to spend credits. Auto-on-new would burn credits continuously as scraping adds thousands of contacts. Skips recently-verified rows (domain rule #3). |
-| 2 | Brevo deliverability gate | **Only proven-deliverable** (`verification_status='verified'`) | "Don't send non-deliverable emails." Read strictly: only Reoon-confirmed `verified` go to Brevo. `catch_all`/`unknown`/`unverified`/`undeliverable` are all held back until verified. Protects sender reputation. |
+| 2 | Brevo deliverability gate | **Deliverable** (`verification_status='verified'` **or** `'catch_all'`) | "Don't send non-deliverable emails." Reoon-confirmed `verified` **and** `catch_all` (domain accepts mail; treated as deliverable) go to Brevo. `unknown`/`unverified`/`undeliverable` are held back until verified. Protects sender reputation. |
 | 3 | Brevo push trigger | **Manual button** | Same as verification — explicit, controlled. Deletes still propagate automatically (see #4) so we never email a removed contact. |
 | 4 | Delete semantics | **Hard-delete in Brevo**, propagated **automatically** via a PocketBase delete hook | One source of truth: gone here = gone there. The hook catches deletes from *anywhere* (UI, PB admin, API), not just a UI button. |
 | 5 | Brevo attributes | **NAME, CLUB, COUNTRY, QUALITY** (besides EMAIL) | Enough for personalization + geographic/quality segmentation of campaigns. |
 | 6 | Backfill provenance | `source_type='brevo'`, **no club**, email only | Brevo has no club data; import as bare emails so we hold one row per address. Idempotent on the `email` unique index — re-running creates nothing new. |
 
 > **Supersedes:** an earlier draft answer set the Brevo scope to "all contacts." The Reoon gate
-> (#2) replaces it — the push filter is now `verification_status='verified'`, full stop.
+> (#2) replaces it — the push filter is `(verification_status='verified' || verification_status='catch_all') && blocklisted!=true`.
+> (`catch_all` was later added to the gate: a catch-all domain accepts mail, so we treat it as deliverable.)
 
 ## Schema changes
 
@@ -76,7 +77,7 @@ Reoon's `power`-mode single/bulk result carries a per-email `status` (and an
 |--------------|---------------------------|----------------|
 | `safe` (deliverable) | `verified` | **yes** |
 | `role_account` (deliverable role addr, e.g. info@) | `verified` | yes |
-| `catch_all` | `catch_all` | no (gate #2) |
+| `catch_all` | `catch_all` | **yes** (gate #2 — domain accepts mail) |
 | `unknown` / temporary failure | `unknown` | no |
 | `invalid` / `disabled` / `disposable` / `spamtrap` / `inbox_full` | `undeliverable` | no |
 
@@ -127,7 +128,7 @@ SplitInBatches loop makes it reliable at scale.
 Manual "Sync deliverable to Brevo" button. Body `{}` (syncs **all** eligible) or `{ filter }`.
 1. **PB Auth**.
 2. **Code "Build payload"**: read `settings.brevo.list_id` (error out clearly if unset). Page
-   `contacts` where **`verification_status='verified' && blocklisted!=true`** (AND any incoming
+   `contacts` where **`(verification_status='verified' || verification_status='catch_all') && blocklisted!=true`** (AND any incoming
    `filter`), `expand=club`. Build Brevo rows reusing **Brevo's existing attributes**
    `{ email, attributes:{ FIRSTNAME, CLUB_NAME, COUNTRY, CITY, QUALITY } }` (FIRSTNAME = contact
    name; CLUB_NAME = `name_en||name`; COUNTRY/CITY from the club; QUALITY from the contact). COUNTRY
@@ -176,7 +177,7 @@ everywhere*, *both* manual + automatic freshness, *reuse Brevo attributes*):
 
 - **Schema:** `contacts.blocklisted` (bool, migration `1780656200_contacts_blocklisted.js`). Kept
   but flagged — never deleted (so a re-scrape/re-import can't silently revive an opt-out).
-- **Excluded everywhere:** the Brevo sync gate is `verified && blocklisted!=true`; Reoon "Pick
+- **Excluded everywhere:** the Brevo sync gate is `(verified || catch_all) && blocklisted!=true`; Reoon "Pick
   contacts" skips blocklisted (no wasted credits); CSV export always filters out blocklisted
   (unless the "Only blocklisted" audit filter is active).
 - **Capture + manual refresh:** `brevo-backfill` now reads `emailBlacklisted` for every Brevo
@@ -229,7 +230,7 @@ detail dialog:
 - **"Verify emails (Reoon)"** → `triggerVerifyContacts({ filter })` → `verify-contacts-reoon`.
   Verifies the current filtered set (or all). Shows returned counts.
 - **"Sync deliverable to Brevo"** → `triggerBrevoSync()` → `sync-contacts-brevo`. Pushes all
-  `verified` contacts. Description spells out the gate ("only verified contacts are sent").
+  deliverable (`verified` or `catch_all`) contacts. Description spells out the gate.
 - **"Import from Brevo (backfill)"** → `triggerBrevoBackfill()` → `brevo-backfill`. One-time; safe
   to re-run (idempotent). A confirm step notes it's a bulk import.
 - **Delete** (in `ContactDetailDialog`): a "Delete contact" button → confirm →
@@ -256,7 +257,8 @@ The contacts table/detail already render `verification_status` (badge) and `sour
 ## Out of scope
 
 - Automatic (real-time) verification or Brevo push — both are manual by decision (#1, #3).
-- Pushing `catch_all`/`unknown` to Brevo — gated out (#2); revisit only if reach is too low.
+- Pushing `unknown`/`unverified`/`undeliverable` to Brevo — gated out (#2). (`catch_all` is now
+  considered deliverable and **is** pushed.)
 - Two-way attribute sync / pulling Brevo engagement (opens, clicks) back into our DB.
 - Quality (A/B/C) scoring itself — still the separate Phase-4 work; Brevo just forwards whatever
   `quality` is set. Most contacts are unscored today, so QUALITY will often be blank in Brevo.

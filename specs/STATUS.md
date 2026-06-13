@@ -51,7 +51,7 @@ Update this when you finish a chunk of work. A new session should read `CLAUDE.m
 > Job tick/Job done nodes — they had no PB auth), site-scrape-driver (dispatch job). Cron drains
 > left to their queue panels by design. UI ships on next Coolify deploy.
 > Decisions: Reoon verify = manual button; Brevo gate =
-> only `verification_status='verified'` (proven-deliverable); Brevo delete = hard-delete via PB
+> `verification_status` in (`verified`, `catch_all`) — both deliverable; Brevo delete = hard-delete via PB
 > hook; attrs NAME/CLUB/COUNTRY/QUALITY; backfill imports Brevo→PB as `source_type='brevo'`
 > (email-only, no club). Built: migration `1780656100_brevo_reoon.js` (club→optional, source_type
 > +`brevo`, seeds `settings.brevo`/`settings.reoon`); hook `pb_hooks/brevo_contact_delete.pb.js`;

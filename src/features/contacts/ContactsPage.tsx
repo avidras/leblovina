@@ -146,11 +146,11 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
     runAction('Verifying pending contacts via Reoon…', () => triggerVerifyContacts({ filter: pending }))
   }
 
-  // Push ALL proven-deliverable (verified) contacts to Brevo — ignores the on-screen filter
-  // by design (the deliverability gate, not the view, decides who is sent).
+  // Push ALL deliverable contacts (Reoon "verified" or "catch-all") to Brevo — ignores the
+  // on-screen filter by design (the deliverability gate, not the view, decides who is sent).
   function syncToBrevo() {
-    if (!window.confirm('Push all proven-deliverable (verified) contacts to the Brevo list? Only contacts Reoon marked "verified" are sent; existing Brevo contacts are updated.')) return
-    runAction('Syncing verified contacts to Brevo…', () => triggerBrevoSync())
+    if (!window.confirm('Push all deliverable contacts to the Brevo list? Contacts Reoon marked "verified" or "catch-all" are sent; existing Brevo contacts are updated.')) return
+    runAction('Syncing deliverable contacts to Brevo…', () => triggerBrevoSync())
   }
 
   // Import Brevo contacts (email only, source=Brevo) AND refresh blocklist status. Idempotent.
@@ -250,7 +250,7 @@ export function ContactsPage({ initialClub }: { initialClub?: string | null } = 
           }, {
             key: 'sync-brevo',
             label: 'Sync deliverable to Brevo',
-            description: 'Push ALL proven-deliverable (verified) contacts to the Brevo newsletter list, updating existing ones. Ignores the on-screen filter by design.',
+            description: 'Push ALL deliverable contacts (Reoon "verified" or "catch-all") to the Brevo newsletter list, updating existing ones. Ignores the on-screen filter by design.',
             disabled: actionBusy,
             onSelect: syncToBrevo,
           }, {
